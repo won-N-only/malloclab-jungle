@@ -1,14 +1,11 @@
-/*
- * mm-naive.c - The fastest, least memory-efficient malloc package.
- * 
+/* mm-naive.c - The fastest, least memory-efficient malloc package.
  * In this naive approach, a block is allocated by simply incrementing
  * the brk pointer.  A block is pure payload. There are no headers or
  * footers.  Blocks are never coalesced or reused. Realloc is
- * implemented directly using mm_malloc and mm_free.
- *
- * NOTE TO STUDENTS: Replace this header comment with your own header
+ * implemented directly using mm_malloc and mm_free. */
+/* NOTE TO STUDENTS: Replace this header comment with your own header
  * comment that gives a high level description of your solution.
- */
+ * okok let go */
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -17,94 +14,185 @@
 
 #include "mm.h"
 #include "memlib.h"
-
-/*********************************************************
- * NOTE TO STUDENTS: Before you do anything else, please
- * provide your team information in the following struct.
- ********************************************************/
+// team - info
 team_t team = {
-    /* Team name */
-    "ateam",
-    /* First member's full name */
-    "Harry Bovik",
-    /* First member's email address */
-    "bovik@cs.cmu.edu",
-    /* Second member's full name (leave blank if none) */
+    // Team name //
+    "team 932",
+    // First member's full name //
+    "jayK",
+    // First member's email address //
+    "jayK.com",
+    // Second member's full name (leave blank if none) //
     "",
-    /* Second member's email address (leave blank if none) */
-    ""
-};
+    // Second member's email address (leave blank if none) //
+    ""};
 
-/* single word (4) or double word (8) alignment */
-#define ALIGNMENT 8
+// global vars//
+static char *mem_strt;     // 메모리 시작 주소
+static char *mem_brk;      // 메모리 끝 주소 +1
+static char *mem_max_addr; // 최대 유효 힙 주소 + 1
 
-/* rounds up to the nearest multiple of ALIGNMENT */
-#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
+// 전처리기 매크로 할당
+#define wsize 4                           // 워드는 4바이트
+#define dsize 8                           // 더블워드는 8바이트
+#define chunksize (1 << 12)               // 청크 하나에 4KB할당(페이지 크기랑 일치해서 편할듯)
+#define max(x, y) ((x) > (y) ? (x) : (y)) // x,y중 max값
 
+// 크기와 가용여부를 합쳐서(비트연산 활용) 표시함
+#define pack(size, alloc) ((size) | (alloc)) // or연산으로 헤더에서 쓸 word만들어줌
+
+// 주소p에 r/w
+#define get(p) (*(unsigned int *)(p))                     // 포인터로 주소p를 참조, 블록 이동할 때 쓸거
+#define put(p, val) (*(unsigned int *)(p)) = ((int)(val)) // 주소 p에 val이라는 주소를 담음
+
+// 주소p에서 크기와 할당여부를 읽어옴
+#define get_size(p) (get(p) & ~0x7) // &와 ~를 이용해 뒷 3자리를 제외한 비트를 가져옴
+#define get_alloc(p) (get(p) & 0x1) // 0번째 비트(할당여부)를 가져옴
+
+//(char*)인 이유는 1바이트 단위로 조작이 가능해서임
+#define header_of(bp) ((char *)(bp)-wsize)                           // header 포인터
+#define footer_of(bp) ((char *)(bp) + get_size(hdrp(bp)) - dsize)    // FooTer 포인터
+#define next_block(bp) ((char *)(bp) + get_size((char *)(bp)-wsize)) // 다음블럭으로 ㄱㄱ
+#define prev_block(bp) ((char *)(bp)-get_size((char *)(bp)-dsize))   // 이전블록으로 ㄲㄲ
+
+static char *heap_listp; // heap에서 사용할 포인터
+
+#define ALIGNMENT 8 // single word (4) or double word (8) alignment //
+
+// rounds up to the nearest multiple of ALIGNMENT //
+#define ALIGN(size) (((size) + (ALIGNMENT - 1)) & ~0x7)
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
-/* 
- * mm_init - initialize the malloc package.
- */
+// mm_init - initialize the malloc package.
 int mm_init(void)
 {
+    // mem_sbrk word 4개만큼 늘림, ==로 overflow아닌지 검사
+    if ((heap_listp = mem_sbrk(4 * wsize)) == (void *)-1)
+    {
+        return -1;
+    }
+
+    put(heap_listp, 0); // 블록 생성할때 word 1개 만큼 패딩,
+
+    // 여기부턴 Double Word를 사용함
+    put(heap_listp + (1 * wsize), pack(dsize, 1)); // 그 다음칸에 pro-헤더
+    put(heap_listp + (2 * wsize), pack(dsize, 1)); // 그 다음칸에 pro-푸터
+    put(heap_listp + (3 * wsize), pack(dsize, 1)); // 그 다음칸에 epi-헤더
+
+    heap_listp += (2 * wsize); // 포인터 pro헤더와 epi푸터 사이로 이동
+
+    if (extend_heap(chunksize / wsize) == NULL) // heap initial extend
+        return -1;
+
     return 0;
 }
 
-/* 
- * mm_malloc - Allocate a block by incrementing the brk pointer.
- *     Always allocate a block whose size is a multiple of the alignment.
- */
-void *mm_malloc(size_t size)
+static void *extend_heap(size_t words)
 {
-    int newsize = ALIGN(size + SIZE_T_SIZE);
-    void *p = mem_sbrk(newsize);
-    if (p == (void *)-1)
-	return NULL;
-    else {
-        *(size_t *)p = size;
-        return (void *)((char *)p + SIZE_T_SIZE);
-    }
+    char *bp;
+    size_t size; // unsigned int
+
+    // 더블워드 정렬위해 짝수로 만들어서 alloc
+    size = (words % 2) ? (words + 1) * wsize : words * wsize;
+    if ((int /*원래 long임*/)(bp = mem_sbrk(size)) == -1) // heap크기 size만큼 늘리고 bp 이동시킴. 그 후 long으로 변환
+        return NULL;                                      // 사이즈를 늘릴 때마다 old brk 원래 sbrk로 갱신(함수 내부 참조)
+
+    // 생성한 free-heap space에 헤더, 푸터만들고 에필로그헤더 갱신
+    put(header_of(bp), pack(size, 0));
+    put(footer_of(bp), pack(size, 0));
+    put(header_of(next_block(bp)), pack(0, 1));
+
+    // 만든 free space를 주변 블록과 합쳐줌
+    return coalesce(bp);
 }
 
-/*
- * mm_free - Freeing a block does nothing.
- */
+static void *coalesce(void *bp)
+{
+    // 앞 뒤 블럭의 free 여부 확인
+    size_t prev_alloc = get_alloc(footer_of(prev_block(bp)));
+    size_t next_alloc = get_alloc(header_of(next_block(bp)));
+    size_t size = get_size(header_of(bp));
+
+    if (prev_alloc && next_alloc) // 둘다 alloc이면 넘어감
+        return bp;
+
+    // 앞뒤 중 가용상태인것과 합쳐줌
+    else if (prev_alloc && !next_alloc) // 다음 블럭이 가용일때
+    {
+        size += get_size(header_of(next_block(bp)));
+        put(header_of(bp), pack(size, 0));
+        put(footer_of(bp), pack(size, 0)); // 헤더 먼저 해줘서 다음블럭의 footer 가리킴
+    }
+    else if (!prev_alloc && next_alloc) // 이전 블록이 가용일때
+    {
+        size += get_size(header_of(prev_block(bp)));
+        put(footer_of(bp), pack(size, 0));
+        put(header_of(prev_block(bp)), pack(size, 0)); // prev의 헤더에 put
+        bp = prev_block(bp);                           // bp를 원 prev의 헤더로 옮김
+    }
+    else // 둘 다 가용일때
+    {
+        size += get_size(header_of(prev_block(bp))) + get_size(footer_of(next_block(bp)));
+        put(header_of(prev_block(bp)), pack(size, 0));
+        put(footer_of(next_block(bp)), pack(size, 0));
+        bp = prev_block(bp);
+    }
+    return bp;
+}
+
+// mm_malloc - Allocate a block by incrementing the brk pointer.
+// Always allocate a block whose size is a multiple of the alignment.
+void *mm_malloc(size_t size)
+{
+    size_t asize;       // 블록 사이즈 조정
+    size_t extend_size; // fit없으면 extend로 넘기기 위한 var
+    char *bp;
+
+    if (size == 0)
+        return NULL;
+
+    if (size < dsize)      // malloc받은 사이즈가 작아서 헤더푸터 안들어가면
+        asize = 2 * dsize; // asize에 헤더푸터 사이즈(16Byte) 넣어줌
+    else                   // 무조건 자기보다 큰 8의 배수 중 가장 작은값으로 바꿔줌
+        asize = dsize * ((size + (dsize) + (dsize - 1)) / dsize);
+
+    if ((bp = find_fit(asize)) != NULL) // fit to asize 찾아서 place해줌
+    {
+        place(bp, asize);
+        return bp;
+    }
+
+    // if통과 못하면 size extend해주고 다시 place
+    extend_size = max(asize, chunksize); // chunksize=4KB(initial val)
+    if ((bp = extend_heap(extend_size / wsize)) == NULL)
+        return NULL;
+
+    place(bp, asize);
+    return bp;
+}
+static void *find_fit(size_t asize)
+{
+}
+// mm_free - Freeing a block does nothing.
 void mm_free(void *ptr)
 {
 }
 
-/*
- * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
- */
+// mm_realloc - Implemented simply in terms of mm_malloc and mm_free
 void *mm_realloc(void *ptr, size_t size)
 {
     void *oldptr = ptr;
     void *newptr;
     size_t copySize;
-    
+
     newptr = mm_malloc(size);
     if (newptr == NULL)
-      return NULL;
+        return NULL;
     copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
     if (size < copySize)
-      copySize = size;
+        copySize = size;
     memcpy(newptr, oldptr, copySize);
     mm_free(oldptr);
     return newptr;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-

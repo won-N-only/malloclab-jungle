@@ -29,10 +29,10 @@ team_t team = {
 
 ////////////////////////////변수시작/////////////////////////////////////
 
-// global vars//
-static char *mem_strt;     // 메모리 시작 주소
-static char *mem_brk;      // 메모리 끝 주소 +1
-static char *mem_max_addr; // 최대 유효 힙 주소 + 1
+// // global vars//
+// static char *mem_strt;     // 메모리 시작 주소
+// static char *mem_brk;      // 메모리 끝 주소 +1
+// static char *mem_max_addr; // 최대 유효 힙 주소 + 1
 
 // 전처리기 매크로 할당
 #define wsize 4                           // 워드는 4바이트
@@ -60,16 +60,16 @@ static char *mem_max_addr; // 최대 유효 힙 주소 + 1
 // 힙 포인터 설정(전역으로 해야함)
 static char *heap_listp;
 
-#define ALIGNMENT 8 // single word (4) or double word (8) alignment //
+// #define ALIGNMENT 8 // single word (4) or double word (8) alignment //
 
-// rounds up to the nearest multiple of ALIGNMENT //
-#define ALIGN(size) (((size) + (ALIGNMENT - 1)) & ~0x7)
+// // rounds up to the nearest multiple of ALIGNMENT //
+// #define ALIGN(size) (((size) + (ALIGNMENT - 1)) & ~0x7)
 
-#define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+// #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 ////////////////////////////함수시작/////////////////////////////////////
 
-// mm_init - initialize the malloc package.
+// 힙 초기화
 int mm_init(void)
 {
     // mem_sbrk word 4개만큼 늘림, ==로 overflow아닌지 검사
@@ -83,7 +83,7 @@ int mm_init(void)
     put(heap_listp + (2 * wsize), pack(dsize, 1)); // 그 다음칸에 pro-푸터
     put(heap_listp + (3 * wsize), pack(dsize, 1)); // 그 다음칸에 epi-헤더
     //
-    heap_listp += (2 * wsize); // 포인터 pro-헤더와 epi-푸터 사이로 이동
+    heap_listp += (2 * wsize); // 포인터 pro-헤더와 pro-푸터 사이로 이동
 
     if (extend_heap(chunksize / wsize) == NULL) // 힙 최초 설정
         return -1;
@@ -91,7 +91,8 @@ int mm_init(void)
     return 0;
 }
 
-static void *extend_heap(size_t words) // heap 확장함(sbrk처럼), 인수 words인거 확인
+// heap 확장함(sbrk처럼), 인수 words인거 확인
+static void *extend_heap(size_t words)
 {
     char *bp;
     size_t size; // unsigned int
@@ -109,6 +110,7 @@ static void *extend_heap(size_t words) // heap 확장함(sbrk처럼), 인수 wor
     // 만든 free space를 주변 블록과 합쳐줌
     return coalesce(bp);
 }
+
 ////////////////////////////coalesce/////////////////////////////////////
 static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
 {
@@ -146,8 +148,7 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
 }
 ////////////////////////////coalesce/////////////////////////////////////
 
-// mm_malloc - Allocate a block by incrementing the brk pointer.
-// Always allocate a block whose size is a multiple of the alignment.
+// 메모리 할당해줌
 void *mm_malloc(size_t size)
 {
     size_t asize;       // 블록 사이즈 조정
@@ -158,11 +159,11 @@ void *mm_malloc(size_t size)
         return NULL;
 
     if (size < dsize)      // malloc받은 사이즈가 작아서 헤더푸터 안들어가면
-        asize = 2 * dsize; // asize에 헤더푸터 사이즈(16Byte) 넣어줌
-    else                   // 무조건 자기보다 큰 8의 배수 중 가장 작은값으로 바꿔줌
+        asize = 2 * dsize; // asize에 헤더푸터 사이즈(16Byte) 넣음
+    else                   // 무조건 자기보다 큰 8의 배수 중 가장 작은값으로 바꿈
         asize = dsize * ((size + (dsize) + (dsize - 1)) / dsize);
 
-    if ((bp = find_fit(asize)) != NULL) // fit to asize 찾아서 place해줌
+    if ((bp = find_fit(asize)) != NULL) // fit to asize 찾아서 place
     {
         place(bp, asize);
         return bp;
@@ -206,8 +207,9 @@ static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place�
     }
 }
 
-// mm_free - Freeing a block does nothing.
-void mm_free(void *bp)//free하고 헤더푸터에 f표현 + coalesce해줌 
+// free하고 헤더푸터에 f표현 + coalesce해줌
+//chunk size넘어가면? 어떻게해 8000인데 4000만 쓰고있으면? 
+void mm_free(void *bp)
 {
     size_t size = get_size(header_of(bp));
     put(header_of(bp), pack(size, 0));
@@ -215,20 +217,30 @@ void mm_free(void *bp)//free하고 헤더푸터에 f표현 + coalesce해줌
     coalesce(bp);
 }
 
-// mm_realloc - Implemented simply in terms of mm_malloc and mm_free
-void *mm_realloc(void *ptr, size_t size)
-{
-    void *oldptr = ptr;
-    void *newptr;
-    size_t copySize;
+////////////////////////////re-alloc/////////////////////////////////////
 
-    newptr = mm_malloc(size);
-    if (newptr == NULL)
-        return NULL;
-    copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
-    if (size < copySize)
-        copySize = size;
-    memcpy(newptr, oldptr, copySize);
-    mm_free(oldptr);
-    return newptr;
+void *mm_realloc(void *bp, size_t size)
+{
+    if (size <= 0)
+    {
+        mm_free(bp);
+        return 0;
+    }
+    if (bp == NULL)
+        return mm_malloc(size);
+
+    void *new_p = mm_malloc(size);
+
+    if (new_p == NULL)
+        return 0;
+
+    size_t oldsize = get_size(header_of(bp));
+
+    if (size < oldsize)
+        oldsize = size;
+
+    memcpy(new_p, bp, oldsize);
+    mm_free(bp);
+
+    return new_p;
 }

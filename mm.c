@@ -27,6 +27,8 @@ team_t team = {
     // Second member's email address (leave blank if none) //
     ""};
 
+////////////////////////////변수시작/////////////////////////////////////
+
 // global vars//
 static char *mem_strt;     // 메모리 시작 주소
 static char *mem_brk;      // 메모리 끝 주소 +1
@@ -55,7 +57,8 @@ static char *mem_max_addr; // 최대 유효 힙 주소 + 1
 #define next_block(bp) ((char *)(bp) + get_size((char *)(bp)-wsize)) // 다음블럭으로 ㄱㄱ
 #define prev_block(bp) ((char *)(bp)-get_size((char *)(bp)-dsize))   // 이전블록으로 ㄲㄲ
 
-static char *heap_listp; // heap에서 사용할 포인터
+// 힙 포인터 설정(전역으로 해야함)
+static char *heap_listp;
 
 #define ALIGNMENT 8 // single word (4) or double word (8) alignment //
 
@@ -64,31 +67,31 @@ static char *heap_listp; // heap에서 사용할 포인터
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
+////////////////////////////함수시작/////////////////////////////////////
+
 // mm_init - initialize the malloc package.
 int mm_init(void)
 {
     // mem_sbrk word 4개만큼 늘림, ==로 overflow아닌지 검사
     if ((heap_listp = mem_sbrk(4 * wsize)) == (void *)-1)
-    {
         return -1;
-    }
 
     put(heap_listp, 0); // 블록 생성할때 word 1개 만큼 패딩,
 
-    // 여기부턴 Double Word를 사용함
+    // 여기부터 Double Word 사용
     put(heap_listp + (1 * wsize), pack(dsize, 1)); // 그 다음칸에 pro-헤더
     put(heap_listp + (2 * wsize), pack(dsize, 1)); // 그 다음칸에 pro-푸터
     put(heap_listp + (3 * wsize), pack(dsize, 1)); // 그 다음칸에 epi-헤더
+    //
+    heap_listp += (2 * wsize); // 포인터 pro-헤더와 epi-푸터 사이로 이동
 
-    heap_listp += (2 * wsize); // 포인터 pro헤더와 epi푸터 사이로 이동
-
-    if (extend_heap(chunksize / wsize) == NULL) // heap initial extend
+    if (extend_heap(chunksize / wsize) == NULL) // 힙 최초 설정
         return -1;
 
     return 0;
 }
 
-static void *extend_heap(size_t words)
+static void *extend_heap(size_t words) // heap 확장함(sbrk처럼), 인수 words인거 확인
 {
     char *bp;
     size_t size; // unsigned int
@@ -106,15 +109,16 @@ static void *extend_heap(size_t words)
     // 만든 free space를 주변 블록과 합쳐줌
     return coalesce(bp);
 }
-
-static void *coalesce(void *bp)
+////////////////////////////coalesce/////////////////////////////////////
+static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
 {
     // 앞 뒤 블럭의 free 여부 확인
     size_t prev_alloc = get_alloc(footer_of(prev_block(bp)));
     size_t next_alloc = get_alloc(header_of(next_block(bp)));
     size_t size = get_size(header_of(bp));
 
-    if (prev_alloc && next_alloc) // 둘다 alloc이면 넘어감
+    // 둘다 alloc이면 넘어감
+    if (prev_alloc && next_alloc)
         return bp;
 
     // 앞뒤 중 가용상태인것과 합쳐줌
@@ -140,6 +144,7 @@ static void *coalesce(void *bp)
     }
     return bp;
 }
+////////////////////////////coalesce/////////////////////////////////////
 
 // mm_malloc - Allocate a block by incrementing the brk pointer.
 // Always allocate a block whose size is a multiple of the alignment.
@@ -171,12 +176,43 @@ void *mm_malloc(size_t size)
     place(bp, asize);
     return bp;
 }
-static void *find_fit(size_t asize)
+
+static void *find_fit(size_t asize) // 어떻게 fit한곳 찾냐면
 {
+    void *bp;
+    for (bp = heap_listp; get_size(header_of(bp)) > 0; bp = next_block(bp))
+    { // header of next bp가 0이되면 끝
+        if (!get_alloc(header_of(bp)) && (asize <= get_size(header_of(bp))))
+            return bp; // alloc이 0이고 size가 asize보다 크면 return 해당 bp
+    }
+    return NULL; // NULL이면 fit이없음, extend_size 실행됨
 }
-// mm_free - Freeing a block does nothing.
-void mm_free(void *ptr)
+
+static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place해줌
 {
+    size_t curr_size = get_size(header_of(bp));
+    if ((curr_size - asize) >= (2 * dsize)) // 현재 size-받은 size해서 헤더+푸터size보다 크면
+    {
+        put(header_of(bp), pack(asize, 1));             // asize만큼 떨어진 헤더 푸터
+        put(footer_of(bp), pack(asize, 1));             // 둘다 채우고
+        bp = next_block(bp);                            // 다음블럭으로 가서
+        put(header_of(bp), pack(curr_size - asize, 1)); // 남은 부분 헤더 푸터 만들어줌
+        put(footer_of(bp), pack(curr_size - asize, 1));
+    }
+    else // 헤더 푸터 못들어가는 곳이면 그냥 curr 다 채움
+    {
+        put(header_of(bp), pack(curr_size, 1));
+        put(footer_of(bp), pack(curr_size, 1));
+    }
+}
+
+// mm_free - Freeing a block does nothing.
+void mm_free(void *bp)//free하고 헤더푸터에 f표현 + coalesce해줌 
+{
+    size_t size = get_size(header_of(bp));
+    put(header_of(bp), pack(size, 0));
+    put(footer_of(bp), pack(size, 0));
+    coalesce(bp);
 }
 
 // mm_realloc - Implemented simply in terms of mm_malloc and mm_free

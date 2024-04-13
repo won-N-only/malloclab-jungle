@@ -38,7 +38,7 @@ team_t team = {
 #define dsize 8                           // 더블워드는 8바이트
 #define max(x, y) ((x) > (y) ? (x) : (y)) // x,y중 max값
 // 청크크기 바꿔주면 더 util이 올라가네?
-#define chunksize (1 << 6 + 1 << 4) // 청크 하나에 4KB할당(페이지 크기랑 일치해서 편할듯)
+#define chunksize (1 << 6 | 1 << 4) // 청크 하나에 4KB할당(페이지 크기랑 일치해서 편할듯)
 
 // 크기와 가용여부를 합쳐서(비트연산 활용) 표시함
 #define pack(size, alloc) ((size) | (alloc)) // or연산으로 헤더에서 쓸 word만들어줌
@@ -52,11 +52,16 @@ team_t team = {
 #define get_alloc(p) (get(p) & 0x1) // 0번째 비트(할당여부)를 가져옴
 
 //(char*)인 이유는 1바이트 단위로 조작이 가능해서임
+// 기본 이동
 #define header_of(bp) ((char *)(bp)-wsize)                             // header 포인터
 #define footer_of(bp) ((char *)(bp) + get_size(header_of(bp)) - dsize) // FooTer 포인터
 #define next_block(bp) ((char *)(bp) + get_size((char *)(bp)-wsize))   // 다음블럭으로 ㄱㄱ
 #define prev_block(bp) ((char *)(bp)-get_size((char *)(bp)-dsize))     // 이전블록으로 ㄲㄲ
 
+// 가용 리스트 내 이동
+// prev/next 블록이 가리키는 곳으로 가는 이중포인터 //void*의 값에 *접근함
+#define prev_freep(bp) (*(void **)(bp))         // prev free ㄱㄱ
+#define next_freep(bp) (*(void **)(bp + WSIZE)) ////next free ㄱㄱ
 // 힙 포인터 설정(전역으로 해야함)
 static char *heap_listp;
 

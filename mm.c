@@ -62,6 +62,9 @@ static char *heap_listp;
 // next_fit을 위함/ 가장 최근 할당 위치 전역변수화
 static char *last_allocated = NULL;
 
+// best_fit을 위함/ fittest한 위치 저장
+static char *best_address = NULL;
+
 // #define ALIGNMENT 8 // single word (4) or double word (8) alignment //
 
 // // rounds up to the nearest multiple of ALIGNMENT //
@@ -79,7 +82,7 @@ static char *next_fit(size_t asize);
 static void place(void *bp, size_t asize);
 void mm_free(void *bp);
 void *mm_realloc(void *bp, size_t size);
-static char *find_next_fit(size_t asize);
+static char *best_fit(size_t asize);
 
 ////////////////////////////함수시작/////////////////////////////////////
 
@@ -143,7 +146,7 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
         size += get_size(header_of(next_block(bp)));
         put(header_of(bp), pack(size, 0));
         put(footer_of(bp), pack(size, 0)); // 헤더 먼저 해줘서 다음블럭의 footer 가리킴
-        last_allocated = bp;               // next_fit의 lasta alloc 갱신
+        last_allocated = bp;               // next_fit의 last alloc 갱신
     }
     else if (!prev_alloc && next_alloc) // 이전 블록이 가용일때
     {
@@ -151,7 +154,7 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
         put(footer_of(bp), pack(size, 0));
         put(header_of(prev_block(bp)), pack(size, 0)); // prev의 헤더에 put
         bp = prev_block(bp);                           // bp를 원 prev의 헤더로 옮김
-        last_allocated = bp;                           // next_fit의 lasta alloc 갱신
+        last_allocated = bp;                           // next_fit의 last alloc 갱신
     }
     else // 둘 다 가용일때
     {
@@ -159,7 +162,7 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
         put(header_of(prev_block(bp)), pack(size, 0));
         put(footer_of(next_block(bp)), pack(size, 0));
         bp = prev_block(bp);
-        last_allocated = bp; // next_fit의 lasta alloc 갱신
+        last_allocated = bp; // next_fit의 last alloc 갱신
     }
     return bp;
 }
@@ -241,6 +244,25 @@ static char *next_fit(size_t asize)
     }
     return NULL; // heap내에 가용 없으면 extend를 위해 NULL 반환;
 }
+static char *best_fit(size_t asize)
+{
+    char *start = best_address;
+    char *bp;
+
+    // 처음부터 힙의 끝까지 검색
+    for (bp = heap_listp; get_size(header_of(bp)) > 0; bp = next_block(bp)) // epi-헤더만나면 size=0이라 for문끝
+    {
+        if (!get_alloc(header_of(bp)) && asize <= get_size(header_of(bp)))
+        {
+            best_address = bp;
+            if (bp < best_address)
+                best_address = bp;
+        }
+        return bp;
+    }
+
+    return NULL; // heap내에 가용 없으면 extend를 위해 NULL 반환;
+}
 
 static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place해줌
 {
@@ -271,19 +293,20 @@ void mm_free(void *bp)
 }
 
 ////////////////////////////re-alloc/////////////////////////////////////
+//  - 이미 할당한 공간의 크기를 바꿀 때 realloc 함수를 사용한다.
 void *mm_realloc(void *bp, size_t size)
 {
-    if (size <= 0)
+    if (size <= 0) // realloc 하려는 size 0이하면 free
     {
         mm_free(bp);
         return 0;
     }
-    if (bp == NULL)
+    if (bp == NULL) // heap 없을때 malloc으로 해줌
         return mm_malloc(size);
 
-    void *new_p = mm_malloc(size);
+    void *new_bp = mm_malloc(size);
 
-    if (new_p == NULL)
+    if (new_bp == NULL) // 힙이 꽉 찼을때
         return 0;
 
     size_t oldsize = get_size(header_of(bp));
@@ -291,9 +314,9 @@ void *mm_realloc(void *bp, size_t size)
     if (size < oldsize)
         oldsize = size;
 
-    memcpy(new_p, bp, oldsize);
+    memcpy(new_bp, bp, oldsize);
     mm_free(bp);
 
-    return new_p;
+    return new_bp;
 }
 // dd

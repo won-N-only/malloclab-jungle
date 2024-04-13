@@ -36,7 +36,7 @@ team_t team = {
 // 전처리기 매크로 할당
 #define wsize 4                           // 워드는 4바이트
 #define dsize 8                           // 더블워드는 8바이트
-#define chunksize (1 << 6)                // 청크 하나에 4KB할당(페이지 크기랑 일치해서 편할듯)
+#define chunksize (1 << 11)               // 청크 하나에 4KB할당(페이지 크기랑 일치해서 편할듯)
 #define max(x, y) ((x) > (y) ? (x) : (y)) // x,y중 max값
 
 // 크기와 가용여부를 합쳐서(비트연산 활용) 표시함

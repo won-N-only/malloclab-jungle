@@ -36,8 +36,9 @@ team_t team = {
 // 전처리기 매크로 할당
 #define wsize 4                           // 워드는 4바이트
 #define dsize 8                           // 더블워드는 8바이트
-#define chunksize (1 << 6)                // 청크 하나에 4KB할당(페이지 크기랑 일치해서 편할듯)
 #define max(x, y) ((x) > (y) ? (x) : (y)) // x,y중 max값
+// 청크크기 바꿔주면 더 util이 올라가네?
+#define chunksize (1 << 6 + 1 << 4) // 청크 하나에 4KB할당(페이지 크기랑 일치해서 편할듯)
 
 // 크기와 가용여부를 합쳐서(비트연산 활용) 표시함
 #define pack(size, alloc) ((size) | (alloc)) // or연산으로 헤더에서 쓸 word만들어줌
@@ -61,9 +62,6 @@ static char *heap_listp;
 
 // next_fit을 위함/ 가장 최근 할당 위치 전역변수화
 static char *last_allocated = NULL;
-
-// best_fit을 위함/ fittest한 위치 저장
-static char *best_address = NULL;
 
 // #define ALIGNMENT 8 // single word (4) or double word (8) alignment //
 
@@ -185,8 +183,8 @@ void *mm_malloc(size_t size)
 
     ////////////////////////////TEST/////////////////////////////////////
     // bp = find_fit(asize); // asize 정하고나서 bp에 반영함
-    // bp = next_fit(asize); // asize 정하고나서 bp에 반영함
-    bp = best_fit(asize); // asize 정하고나서 bp에 반영함
+    bp = next_fit(asize); //
+    // bp = best_fit(asize); // asize 정하고나서 bp에 반영함
 
     if (bp != NULL) // fit to asize 찾아서 place
     {
@@ -202,17 +200,6 @@ void *mm_malloc(size_t size)
 
     place(bp, asize);
     return bp;
-}
-
-static void *find_fit(size_t asize) // 어떻게 fit한곳 찾냐면 first fit
-{
-    void *bp;
-    for (bp = heap_listp; get_size(header_of(bp)) > 0; bp = next_block(bp))
-    { // header of next bp가 0이되면 끝
-        if (!get_alloc(header_of(bp)) && (asize <= get_size(header_of(bp))))
-            return bp; // alloc이 0이고 size가 asize보다 크면 return 해당 bp
-    }
-    return NULL; // NULL이면 fit이없음, extend_size 실행
 }
 
 // next_fit 메모리 할당 함수
@@ -245,21 +232,7 @@ static char *next_fit(size_t asize)
     }
     return NULL; // heap내에 가용 없으면 extend를 위해 NULL 반환;
 }
-static char *best_fit(size_t asize)
-{
-    char *bp;
-    char *best_address = NULL;
 
-    for (bp = heap_listp; get_size(header_of(bp)) > 0; bp = next_block(bp))
-    {
-        if (!get_alloc(header_of(bp)) && asize <= get_size(header_of(bp)))
-        {
-            if (best_address == NULL || get_size(header_of(bp)) < get_size(header_of(best_address)))
-                best_address = bp;
-        }
-    }
-    return best_address; // 최적의 블록 주소 반환, 없으면 NULL 반환
-}
 static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place해줌
 {
     size_t curr_size = get_size(header_of(bp));

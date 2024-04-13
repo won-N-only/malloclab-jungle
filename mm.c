@@ -59,9 +59,6 @@ team_t team = {
 // 힙 포인터 설정(전역으로 해야함)
 static char *heap_listp;
 
-// next_fit을 위함/ 가장 최근 할당 위치 전역변수화
-static char *last_allocated = NULL;
-
 // #define ALIGNMENT 8 // single word (4) or double word (8) alignment //
 
 // // rounds up to the nearest multiple of ALIGNMENT //
@@ -155,7 +152,6 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
         put(header_of(prev_block(bp)), pack(size, 0));
         put(footer_of(next_block(bp)), pack(size, 0));
         bp = prev_block(bp);
-        last_allocated = bp; // next_fit의 lasta alloc 갱신
     }
     return bp;
 }
@@ -177,8 +173,7 @@ void *mm_malloc(size_t size)
         asize = dsize * ((size + (dsize) + (dsize - 1)) / dsize);
 
     ////////////////////////////TEST/////////////////////////////////////
-    // bp = find_fit(asize); // asize 정하고나서 bp에 반영함
-    bp = next_fit(asize); // asize 정하고나서 bp에 반영함
+    bp = find_fit(asize); // asize 정하고나서 bp에 반영함
 
     if (bp != NULL) // fit to asize 찾아서 place
     {

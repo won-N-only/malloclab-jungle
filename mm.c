@@ -14,6 +14,7 @@
 
 #include "mm.h"
 #include "memlib.h"
+
 // team - info
 team_t team = {
     // Team name //
@@ -22,9 +23,7 @@ team_t team = {
     "jayK",
     // First member's email address //
     "jayK.com",
-    // Second member's full name (leave blank if none) //
     "",
-    // Second member's email address (leave blank if none) //
     ""};
 
 ////////////////////////////변수시작/////////////////////////////////////
@@ -37,7 +36,7 @@ team_t team = {
 // 전처리기 매크로 할당
 #define wsize 4                           // 워드는 4바이트
 #define dsize 8                           // 더블워드는 8바이트
-#define chunksize (1 << 12)               // 청크 하나에 4KB할당(페이지 크기랑 일치해서 편할듯)
+#define chunksize (1 << 6)                // 청크 하나에 4KB할당(페이지 크기랑 일치해서 편할듯)
 #define max(x, y) ((x) > (y) ? (x) : (y)) // x,y중 max값
 
 // 크기와 가용여부를 합쳐서(비트연산 활용) 표시함
@@ -52,13 +51,16 @@ team_t team = {
 #define get_alloc(p) (get(p) & 0x1) // 0번째 비트(할당여부)를 가져옴
 
 //(char*)인 이유는 1바이트 단위로 조작이 가능해서임
-#define header_of(bp) ((char *)(bp)-wsize)                           // header 포인터
-#define footer_of(bp) ((char *)(bp) + get_size(hdrp(bp)) - dsize)    // FooTer 포인터
-#define next_block(bp) ((char *)(bp) + get_size((char *)(bp)-wsize)) // 다음블럭으로 ㄱㄱ
-#define prev_block(bp) ((char *)(bp)-get_size((char *)(bp)-dsize))   // 이전블록으로 ㄲㄲ
+#define header_of(bp) ((char *)(bp)-wsize)                             // header 포인터
+#define footer_of(bp) ((char *)(bp) + get_size(header_of(bp)) - dsize) // FooTer 포인터
+#define next_block(bp) ((char *)(bp) + get_size((char *)(bp)-wsize))   // 다음블럭으로 ㄱㄱ
+#define prev_block(bp) ((char *)(bp)-get_size((char *)(bp)-dsize))     // 이전블록으로 ㄲㄲ
 
 // 힙 포인터 설정(전역으로 해야함)
 static char *heap_listp;
+
+// next_fit을 위함/ 가장 최근 할당 위치 전역변수화
+static char *last_allocated = NULL;
 
 // #define ALIGNMENT 8 // single word (4) or double word (8) alignment //
 
@@ -66,6 +68,18 @@ static char *heap_listp;
 // #define ALIGN(size) (((size) + (ALIGNMENT - 1)) & ~0x7)
 
 // #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+
+////////////////////////////함수선언/////////////////////////////////////
+int mm_init(void);
+static void *extend_heap(size_t words);
+static void *coalesce(void *bp);
+void *mm_malloc(size_t size);
+static void *find_fit(size_t asize);
+static char *next_fit(size_t asize);
+static void place(void *bp, size_t asize);
+void mm_free(void *bp);
+void *mm_realloc(void *bp, size_t size);
+static char *find_next_fit(size_t asize);
 
 ////////////////////////////함수시작/////////////////////////////////////
 
@@ -129,6 +143,7 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
         size += get_size(header_of(next_block(bp)));
         put(header_of(bp), pack(size, 0));
         put(footer_of(bp), pack(size, 0)); // 헤더 먼저 해줘서 다음블럭의 footer 가리킴
+        last_allocated = bp;               // next_fit의 lasta alloc 갱신
     }
     else if (!prev_alloc && next_alloc) // 이전 블록이 가용일때
     {
@@ -136,6 +151,7 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
         put(footer_of(bp), pack(size, 0));
         put(header_of(prev_block(bp)), pack(size, 0)); // prev의 헤더에 put
         bp = prev_block(bp);                           // bp를 원 prev의 헤더로 옮김
+        last_allocated = bp;                           // next_fit의 lasta alloc 갱신
     }
     else // 둘 다 가용일때
     {
@@ -143,6 +159,7 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
         put(header_of(prev_block(bp)), pack(size, 0));
         put(footer_of(next_block(bp)), pack(size, 0));
         bp = prev_block(bp);
+        last_allocated = bp; // next_fit의 lasta alloc 갱신
     }
     return bp;
 }
@@ -151,23 +168,28 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
 // 메모리 할당해줌
 void *mm_malloc(size_t size)
 {
-    size_t asize;       // 블록 사이즈 조정
+    size_t asize;       // 블록 사이즈 조정(adjust)
     size_t extend_size; // fit없으면 extend로 넘기기 위한 var
     char *bp;
 
     if (size == 0)
         return NULL;
 
-    if (size < dsize)      // malloc받은 사이즈가 작아서 헤더푸터 안들어가면
+    if (size <= dsize)     // malloc받은 사이즈가 작아서 헤더푸터 안들어가면
         asize = 2 * dsize; // asize에 헤더푸터 사이즈(16Byte) 넣음
     else                   // 무조건 자기보다 큰 8의 배수 중 가장 작은값으로 바꿈
         asize = dsize * ((size + (dsize) + (dsize - 1)) / dsize);
 
-    if ((bp = find_fit(asize)) != NULL) // fit to asize 찾아서 place
+    ////////////////////////////TEST/////////////////////////////////////
+    // bp = find_fit(asize); // asize 정하고나서 bp에 반영함
+    bp = next_fit(asize); // asize 정하고나서 bp에 반영함
+
+    if (bp != NULL) // fit to asize 찾아서 place
     {
         place(bp, asize);
         return bp;
     }
+    ////////////////////////////TEST/////////////////////////////////////
 
     // if통과 못하면 size extend해주고 다시 place
     extend_size = max(asize, chunksize); // chunksize=4KB(initial val)
@@ -178,7 +200,7 @@ void *mm_malloc(size_t size)
     return bp;
 }
 
-static void *find_fit(size_t asize) // 어떻게 fit한곳 찾냐면
+static void *find_fit(size_t asize) // 어떻게 fit한곳 찾냐면 first fit
 {
     void *bp;
     for (bp = heap_listp; get_size(header_of(bp)) > 0; bp = next_block(bp))
@@ -186,7 +208,38 @@ static void *find_fit(size_t asize) // 어떻게 fit한곳 찾냐면
         if (!get_alloc(header_of(bp)) && (asize <= get_size(header_of(bp))))
             return bp; // alloc이 0이고 size가 asize보다 크면 return 해당 bp
     }
-    return NULL; // NULL이면 fit이없음, extend_size 실행됨
+    return NULL; // NULL이면 fit이없음, extend_size 실행
+}
+
+// next_fit 메모리 할당 함수
+static char *next_fit(size_t asize)
+{
+    char *start = last_allocated;
+    char *bp;
+
+    // 처음 검색 시작 위치 설정
+    if (last_allocated == NULL)
+        start = heap_listp;
+
+    // last_allocated에서 힙의 끝까지 검색
+    for (bp = start; get_size(header_of(bp)) > 0; bp = next_block(bp)) // epi-헤더만나면 size=0이라 for문끝
+    {
+        if (!get_alloc(header_of(bp)) && asize <= get_size(header_of(bp)))
+        {
+            last_allocated = bp;
+            return bp;
+        }
+    }
+    // 가용 없으면 힙의 시작부터 last_allocated까지 다시 검색
+    for (bp = heap_listp; bp < start; bp = next_block(bp))
+    {
+        if (!get_alloc(header_of(bp)) && asize <= get_size(header_of(bp)))
+        {
+            last_allocated = bp;
+            return bp;
+        }
+    }
+    return NULL; // heap내에 가용 없으면 extend를 위해 NULL 반환;
 }
 
 static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place해줌
@@ -197,8 +250,8 @@ static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place�
         put(header_of(bp), pack(asize, 1));             // asize만큼 떨어진 헤더 푸터
         put(footer_of(bp), pack(asize, 1));             // 둘다 채우고
         bp = next_block(bp);                            // 다음블럭으로 가서
-        put(header_of(bp), pack(curr_size - asize, 1)); // 남은 부분 헤더 푸터 만들어줌
-        put(footer_of(bp), pack(curr_size - asize, 1));
+        put(header_of(bp), pack(curr_size - asize, 0)); // 남은 부분 헤더 푸터 만들어줌
+        put(footer_of(bp), pack(curr_size - asize, 0));
     }
     else // 헤더 푸터 못들어가는 곳이면 그냥 curr 다 채움
     {
@@ -208,7 +261,7 @@ static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place�
 }
 
 // free하고 헤더푸터에 f표현 + coalesce해줌
-//chunk size넘어가면? 어떻게해 8000인데 4000만 쓰고있으면? 
+// chunk size넘어가면? 어떻게해 8000인데 4000만 쓰고있으면?
 void mm_free(void *bp)
 {
     size_t size = get_size(header_of(bp));
@@ -218,7 +271,6 @@ void mm_free(void *bp)
 }
 
 ////////////////////////////re-alloc/////////////////////////////////////
-
 void *mm_realloc(void *bp, size_t size)
 {
     if (size <= 0)
@@ -244,3 +296,4 @@ void *mm_realloc(void *bp, size_t size)
 
     return new_p;
 }
+// dd

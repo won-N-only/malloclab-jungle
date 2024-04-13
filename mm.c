@@ -75,11 +75,9 @@ static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
 void *mm_malloc(size_t size);
 static void *find_fit(size_t asize);
-static char *next_fit(size_t asize);
 static void place(void *bp, size_t asize);
 void mm_free(void *bp);
 void *mm_realloc(void *bp, size_t size);
-static char *find_next_fit(size_t asize);
 
 ////////////////////////////함수시작/////////////////////////////////////
 
@@ -143,7 +141,6 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
         size += get_size(header_of(next_block(bp)));
         put(header_of(bp), pack(size, 0));
         put(footer_of(bp), pack(size, 0)); // 헤더 먼저 해줘서 다음블럭의 footer 가리킴
-        last_allocated = bp;               // next_fit의 lasta alloc 갱신
     }
     else if (!prev_alloc && next_alloc) // 이전 블록이 가용일때
     {
@@ -151,7 +148,6 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
         put(footer_of(bp), pack(size, 0));
         put(header_of(prev_block(bp)), pack(size, 0)); // prev의 헤더에 put
         bp = prev_block(bp);                           // bp를 원 prev의 헤더로 옮김
-        last_allocated = bp;                           // next_fit의 lasta alloc 갱신
     }
     else // 둘 다 가용일때
     {
@@ -209,37 +205,6 @@ static void *find_fit(size_t asize) // 어떻게 fit한곳 찾냐면 first fit
             return bp; // alloc이 0이고 size가 asize보다 크면 return 해당 bp
     }
     return NULL; // NULL이면 fit이없음, extend_size 실행
-}
-
-// next_fit 메모리 할당 함수
-static char *next_fit(size_t asize)
-{
-    char *start = last_allocated;
-    char *bp;
-
-    // 처음 검색 시작 위치 설정
-    if (last_allocated == NULL)
-        start = heap_listp;
-
-    // last_allocated에서 힙의 끝까지 검색
-    for (bp = start; get_size(header_of(bp)) > 0; bp = next_block(bp)) // epi-헤더만나면 size=0이라 for문끝
-    {
-        if (!get_alloc(header_of(bp)) && asize <= get_size(header_of(bp)))
-        {
-            last_allocated = bp;
-            return bp;
-        }
-    }
-    // 가용 없으면 힙의 시작부터 last_allocated까지 다시 검색
-    for (bp = heap_listp; bp < start; bp = next_block(bp))
-    {
-        if (!get_alloc(header_of(bp)) && asize <= get_size(header_of(bp)))
-        {
-            last_allocated = bp;
-            return bp;
-        }
-    }
-    return NULL; // heap내에 가용 없으면 extend를 위해 NULL 반환;
 }
 
 static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place해줌

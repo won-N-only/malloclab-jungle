@@ -91,14 +91,13 @@ int mm_init(void)
     if ((heap_listp = mem_sbrk(4 * wsize)) == (void *)-1)
         return -1;
 
-    put(heap_listp, 0); // 블록 생성할때 word 1개 만큼 패딩,
-
-    // 여기부터 Double Word 사용
+    put(heap_listp, 0);                            // 블록 생성할때 word 1개 만큼 패딩,
     put(heap_listp + (1 * wsize), pack(dsize, 1)); // 그 다음칸에 pro-헤더
-    put(heap_listp + (2 * wsize), pack(dsize, 1)); // 그 다음칸에 pro-푸터
-    put(heap_listp + (3 * wsize), pack(dsize, 1)); // 그 다음칸에 epi-헤더
-    //
-    heap_listp += (2 * wsize); // 포인터 pro-헤더와 pro-푸터 사이로 이동
+    put(heap_listp + (2 * wsize), NULL);           // 그 다음칸에 prev-ava
+    put(heap_listp + (3 * wsize), NULL);           // 그 다음칸에 next-ava
+    put(heap_listp + (4 * wsize), pack(dsize, 1)); // 그 다음칸에 pro-푸터
+    put(heap_listp + (5 * wsize), pack(dsize, 1)); // 그 다음칸에 epi-헤더
+    heap_listp += (2 * wsize);                     // 포인터 pro-헤더와 prev-ava 사이로 이동
 
     if (extend_heap(chunksize / wsize) == NULL) // 힙 최초 설정
         return -1;

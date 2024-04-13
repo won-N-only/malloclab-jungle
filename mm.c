@@ -74,12 +74,10 @@ int mm_init(void);
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
 void *mm_malloc(size_t size);
-static void *find_fit(size_t asize);
 static char *next_fit(size_t asize);
 static void place(void *bp, size_t asize);
 void mm_free(void *bp);
 void *mm_realloc(void *bp, size_t size);
-static char *find_next_fit(size_t asize);
 
 ////////////////////////////함수시작/////////////////////////////////////
 
@@ -181,7 +179,6 @@ void *mm_malloc(size_t size)
         asize = dsize * ((size + (dsize) + (dsize - 1)) / dsize);
 
     ////////////////////////////TEST/////////////////////////////////////
-    // bp = find_fit(asize); // asize 정하고나서 bp에 반영함
     bp = next_fit(asize); // asize 정하고나서 bp에 반영함
 
     if (bp != NULL) // fit to asize 찾아서 place
@@ -198,17 +195,6 @@ void *mm_malloc(size_t size)
 
     place(bp, asize);
     return bp;
-}
-
-static void *find_fit(size_t asize) // 어떻게 fit한곳 찾냐면 first fit
-{
-    void *bp;
-    for (bp = heap_listp; get_size(header_of(bp)) > 0; bp = next_block(bp))
-    { // header of next bp가 0이되면 끝
-        if (!get_alloc(header_of(bp)) && (asize <= get_size(header_of(bp))))
-            return bp; // alloc이 0이고 size가 asize보다 크면 return 해당 bp
-    }
-    return NULL; // NULL이면 fit이없음, extend_size 실행
 }
 
 // next_fit 메모리 할당 함수
@@ -262,6 +248,7 @@ static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place�
 
 // free하고 헤더푸터에 f표현 + coalesce해줌
 // chunk size넘어가면? 어떻게해 8000인데 4000만 쓰고있으면?
+// 알아서 나눠서 페이지에 들어감
 void mm_free(void *bp)
 {
     size_t size = get_size(header_of(bp));

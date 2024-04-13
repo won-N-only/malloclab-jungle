@@ -75,13 +75,13 @@ static char *best_address = NULL;
 ////////////////////////////함수선언/////////////////////////////////////
 int mm_init(void);
 static void *extend_heap(size_t words);
-static void *coalesce(void *bp);
 void *mm_malloc(size_t size);
+void *mm_realloc(void *bp, size_t size);
+void mm_free(void *bp);
+static void *coalesce(void *bp);
+static void place(void *bp, size_t asize);
 static void *find_fit(size_t asize);
 static char *next_fit(size_t asize);
-static void place(void *bp, size_t asize);
-void mm_free(void *bp);
-void *mm_realloc(void *bp, size_t size);
 static char *best_fit(size_t asize);
 
 ////////////////////////////함수시작/////////////////////////////////////
@@ -185,7 +185,8 @@ void *mm_malloc(size_t size)
 
     ////////////////////////////TEST/////////////////////////////////////
     // bp = find_fit(asize); // asize 정하고나서 bp에 반영함
-    bp = next_fit(asize); // asize 정하고나서 bp에 반영함
+    // bp = next_fit(asize); // asize 정하고나서 bp에 반영함
+    bp = best_fit(asize); // asize 정하고나서 bp에 반영함
 
     if (bp != NULL) // fit to asize 찾아서 place
     {
@@ -246,24 +247,19 @@ static char *next_fit(size_t asize)
 }
 static char *best_fit(size_t asize)
 {
-    char *start = best_address;
     char *bp;
+    char *best_address = NULL;
 
-    // 처음부터 힙의 끝까지 검색
-    for (bp = heap_listp; get_size(header_of(bp)) > 0; bp = next_block(bp)) // epi-헤더만나면 size=0이라 for문끝
+    for (bp = heap_listp; get_size(header_of(bp)) > 0; bp = next_block(bp))
     {
         if (!get_alloc(header_of(bp)) && asize <= get_size(header_of(bp)))
         {
-            best_address = bp;
-            if (bp < best_address)
+            if (best_address == NULL || get_size(header_of(bp)) < get_size(header_of(best_address)))
                 best_address = bp;
         }
-        return bp;
     }
-
-    return NULL; // heap내에 가용 없으면 extend를 위해 NULL 반환;
+    return best_address; // 최적의 블록 주소 반환, 없으면 NULL 반환
 }
-
 static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place해줌
 {
     size_t curr_size = get_size(header_of(bp));

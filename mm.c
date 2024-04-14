@@ -66,7 +66,6 @@ team_t team = {
 static char *heap_listp; // 힙 시작 포인터 설정
 static char *free_listp; // free 시작 포인터 설정
 
-
 ////////////////////////////함수선언/////////////////////////////////////
 int mm_init(void);
 static void *extend_heap(size_t words);
@@ -94,7 +93,7 @@ int mm_init(void)
     put(heap_listp + (3 * wsize), NULL);               // 그 다음칸에 next-ava
     put(heap_listp + (4 * wsize), pack(dsize * 2, 1)); // 그 다음칸에 pro-푸터
     put(heap_listp + (5 * wsize), NULL);               // 그 다음칸에 epi-헤더
-    
+
     free_listp = heap_listp + (2 * wsize); // 포인터 pro-헤더와 prev-ava 사이로 이동
 
     if (extend_heap(chunksize / wsize) == NULL) // 힙 최초 설정
@@ -214,7 +213,7 @@ static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place�
     size_t curr_size = get_size(header_of(bp));
     del_freesign(bp);
 
-    if ((curr_size - asize) >= (2 * dsize)) // 현재 size-받은 size해서 헤더+푸터+prev,next의 size보다 크면
+    if ((curr_size - asize) >= (3 * dsize)) // 현재 size-받은 size해서 헤더+푸터+prev,next의 size보다 크면
     {                                       // 다음블럭에 H F P N 만들어줌
         put(header_of(bp), pack(asize, 1)); // asize만큼 떨어진 헤더 푸터
         put(footer_of(bp), pack(asize, 1)); // 둘다 채우고

@@ -51,7 +51,7 @@ team_t team = {
 #define prev_block(bp) ((char *)(bp)-get_size((char *)(bp)-dsize))     // 이전블록으로 ㄲㄲ
 
 // 가용 리스트 내 이동
-// prev/next 블록이 가리키는 곳으로 가는 이중포인터 //void*의 값에 *접근함
+// prev/next 블록이 가리키는 곳으로 가는 이중포인터 //void*의 값에 *접근함 
 #define prev_freep(bp) (*(void **)(bp))         // prev free ㄱㄱ
 #define next_freep(bp) (*(void **)(bp + wsize)) ////next free ㄱㄱ
 
@@ -168,7 +168,7 @@ void *mm_malloc(size_t size)
         return NULL;
 
     if (size <= dsize)     // malloc받은 사이즈가 작아서 헤더푸터 안들어가면
-        asize = 2 * dsize; // asize에 헤더푸터 사이즈(16Byte) 넣음
+        asize = 3 * dsize; // asize에 헤더푸터 사이즈(16Byte) 넣음
     else                   // 무조건 자기보다 큰 8의 배수 중 가장 작은값으로 바꿈
         asize = dsize * ((size + (dsize) + (dsize - 1)) / dsize);
 
@@ -206,7 +206,7 @@ static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place�
     size_t curr_size = get_size(header_of(bp));
     del_freesign(bp);
 
-    if ((curr_size - asize) >= (2 * dsize)) // 현재 size-받은 size해서 헤더+푸터+prev,next의 size보다 크면
+    if ((curr_size - asize) >= (3 * dsize)) // 현재 size-받은 size해서 헤더+푸터+prev,next의 size보다 크면
     {                                       // 다음블럭에 H F P N 만들어줌
         put(header_of(bp), pack(asize, 1)); // asize만큼 떨어진 헤더 푸터
         put(footer_of(bp), pack(asize, 1)); // 둘다 채우고

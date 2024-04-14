@@ -177,7 +177,7 @@ void *mm_malloc(size_t size)
         return NULL;
 
     if (size <= dsize)     // malloc받은 사이즈가 작아서 헤더푸터 안들어가면
-        asize = 2 * dsize; // asize에 헤더푸터 사이즈(16Byte) 넣음
+        asize = 3 * dsize; // asize에 헤더푸터 사이즈(16Byte) 넣음
     else                   // 무조건 자기보다 큰 8의 배수 중 가장 작은값으로 바꿈
         asize = dsize * ((size + (dsize) + (dsize - 1)) / dsize);
 

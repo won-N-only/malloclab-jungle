@@ -206,11 +206,10 @@ static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place�
     size_t curr_size = get_size(header_of(bp));
     del_freesign(bp);
 
-    if ((curr_size - asize) >= (2 * dsize)) // 현재 size-받은 size해서 헤더+푸터+prev,next의 size보다 크면
-    {                                       // 다음블럭에 H F P N 만들어줌
-        put(header_of(bp), pack(asize, 1)); // asize만큼 떨어진 헤더 푸터
-        put(footer_of(bp), pack(asize, 1)); // 둘다 채우고
-
+    if ((curr_size - asize) >= (2 * dsize))             // 현재 size-받은 size해서 헤더+푸터+prev,next의 size보다 크면
+    {                                                   // 다음블럭에 H F P N 만들어줌
+        put(header_of(bp), pack(asize, 1));             // asize만큼 떨어진 헤더 푸터
+        put(footer_of(bp), pack(asize, 1));             // 둘다 채우고
         bp = next_block(bp);                            // 다음블럭으로 가서
         put(header_of(bp), pack(curr_size - asize, 0)); // 남은 부분 헤더 푸터 만들어줌
         put(footer_of(bp), pack(curr_size - asize, 0));
@@ -275,14 +274,14 @@ void make_freesign(void *bp) // free상태인 블럭을 freelist의 처음에 �
 // 있는 freesign 다 지워줌
 void del_freesign(void *bp)
 {
-    if (bp == free_listp)
+    if (bp == free_listp) // bp가 가장 최근에 free됐으면(freelist의 제일 앞이면)
     {
-        prev_freep(next_freep(bp)) = NULL;
-        free_listp = next_freep(bp);
+        prev_freep(next_freep(bp)) = NULL; // 다음 freepointer가 가리키는 prev를 NULL로
+        free_listp = next_freep(bp);       // freelistp 갱신
     }
     else
     {
-        next_freep(prev_freep(bp)) = next_freep(bp);
+        next_freep(prev_freep(bp)) = next_freep(bp); // 다음 freepointer와 이전 freepointer를 서로 갱신
         prev_freep(next_freep(bp)) = prev_freep(bp);
     }
 }

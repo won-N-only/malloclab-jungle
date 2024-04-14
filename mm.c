@@ -38,7 +38,7 @@ team_t team = {
 #define dsize 8                           // 더블워드는 8바이트
 #define max(x, y) ((x) > (y) ? (x) : (y)) // x,y중 max값
 // 청크크기 바꿔주면 더 util이 올라가네?
-#define chunksize (1 << 11) // 청크 하나에 4KB할당(페이지 크기랑 일치해서 편할듯)
+#define chunksize (1 << 9) // 청크 하나에 4KB할당(페이지 크기랑 일치해서 편할듯)
 
 // 크기와 가용여부를 합쳐서(비트연산 활용) 표시함
 #define pack(size, alloc) ((size) | (alloc)) // or연산으로 헤더에서 쓸 word만들어줌
@@ -66,12 +66,6 @@ team_t team = {
 static char *heap_listp; // 힙 시작 포인터 설정
 static char *free_listp; // free 시작 포인터 설정
 
-// #define ALIGNMENT 8 // single word (4) or double word (8) alignment //
-
-// // rounds up to the nearest multiple of ALIGNMENT //
-// #define ALIGN(size) (((size) + (ALIGNMENT - 1)) & ~0x7)
-
-// #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 ////////////////////////////함수선언/////////////////////////////////////
 int mm_init(void);
@@ -100,7 +94,7 @@ int mm_init(void)
     put(heap_listp + (3 * wsize), NULL);               // 그 다음칸에 next-ava
     put(heap_listp + (4 * wsize), pack(dsize * 2, 1)); // 그 다음칸에 pro-푸터
     put(heap_listp + (5 * wsize), NULL);               // 그 다음칸에 epi-헤더
-
+    
     free_listp = heap_listp + (2 * wsize); // 포인터 pro-헤더와 prev-ava 사이로 이동
 
     if (extend_heap(chunksize / wsize) == NULL) // 힙 최초 설정

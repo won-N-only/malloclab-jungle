@@ -206,7 +206,7 @@ static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place�
     size_t curr_size = get_size(header_of(bp));
     del_freesign(bp);
 
-    if ((curr_size - asize) >= (2 * dsize))             // 현재 size-받은 size해서 헤더+푸터+prev,next의 size보다 크면
+    if ((curr_size - asize) >= (3 * dsize))             // 현재 size-받은 size해서 헤더+푸터+prev,next의 size보다 크면
     {                                                   // 다음블럭에 H F P N 만들어줌
         put(header_of(bp), pack(asize, 1));             // asize만큼 떨어진 헤더 푸터
         put(footer_of(bp), pack(asize, 1));             // 둘다 채우고

@@ -17,27 +17,19 @@
 
 // team - info
 team_t team = {
-    // Team name //
     "team 932",
-    // First member's full name //
     "jayK",
-    // First member's email address //
     "jayK.com",
     "",
     ""};
 
 ////////////////////////////변수시작/////////////////////////////////////
 
-// // global vars//
-// static char *mem_strt;     // 메모리 시작 주소
-// static char *mem_brk;      // 메모리 끝 주소 +1
-// static char *mem_max_addr; // 최대 유효 힙 주소 + 1
-
 // 전처리기 매크로 할당
 #define wsize 4                           // 워드는 4바이트
 #define dsize 8                           // 더블워드는 8바이트
 #define max(x, y) ((x) > (y) ? (x) : (y)) // x,y중 max값
-// 청크크기 바꿔주면 더 util이 올라가네?
+// 청크크기 줄이면 util이 올라가네?
 #define chunksize (1 << 9) // 청크 하나에 4KB할당(페이지 크기랑 일치해서 편할듯)
 
 // 크기와 가용여부를 합쳐서(비트연산 활용) 표시함
@@ -94,7 +86,7 @@ int mm_init(void)
     put(heap_listp + (4 * wsize), pack(dsize * 2, 1)); // 그 다음칸에 pro-푸터
     put(heap_listp + (5 * wsize), NULL);               // 그 다음칸에 epi-헤더
 
-    free_listp = heap_listp + (2 * wsize); // 포인터 pro-헤더와 prev-ava 사이로 이동
+    free_listp = heap_listp + (2 * wsize); // free포인터 pro-헤더와 prev-ava 사이로 이동
 
     if (extend_heap(chunksize / wsize) == NULL) // 힙 최초 설정
         return -1;
@@ -164,7 +156,6 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
     make_freesign(bp); // bp에 freesign 만들어줌
     return bp;
 }
-////////////////////////////coalesce/////////////////////////////////////
 
 // 메모리 할당해줌
 void *mm_malloc(size_t size)
@@ -262,7 +253,7 @@ void *mm_realloc(void *bp, size_t size)
 
     size_t oldsize = get_size(header_of(bp));
 
-    if (size < oldsize) // size줄어들면 그냥 줄임
+    if (size < oldsize) // size줄어들면 그냥 줄임(데이터는 잘림)
         oldsize = size;
 
     memcpy(new_bp, bp, oldsize); // 데이터 다른곳에 복사함

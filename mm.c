@@ -66,7 +66,6 @@ team_t team = {
 static char *heap_listp; // 힙 시작 포인터 설정
 static char *free_listp; // free 시작 포인터 설정
 
-
 ////////////////////////////함수선언/////////////////////////////////////
 int mm_init(void);
 static void *extend_heap(size_t words);
@@ -94,7 +93,7 @@ int mm_init(void)
     put(heap_listp + (3 * wsize), NULL);               // 그 다음칸에 next-ava
     put(heap_listp + (4 * wsize), pack(dsize * 2, 1)); // 그 다음칸에 pro-푸터
     put(heap_listp + (5 * wsize), NULL);               // 그 다음칸에 epi-헤더
-    
+
     free_listp = heap_listp + (2 * wsize); // 포인터 pro-헤더와 prev-ava 사이로 이동
 
     if (extend_heap(chunksize / wsize) == NULL) // 힙 최초 설정
@@ -201,12 +200,14 @@ void *mm_malloc(size_t size)
 static void *find_fit(size_t asize)
 {
     void *bp;
+    void *best = NULL;
     for (bp = free_listp; get_alloc(header_of(bp)) != 1; bp = next_freep(bp))
     {
         if (asize <= get_size(header_of(bp)))
-            return bp;
+            if (best == NULL || get_size(header_of(best)) > get_size(header_of(bp)))
+                best = bp;
     }
-    return NULL;
+    return best;
 }
 
 static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place해줌

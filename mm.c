@@ -82,8 +82,8 @@ void mm_free(void *bp);
 static void *coalesce(void *bp);
 static void place(void *bp, size_t asize);
 static void *find_fit(size_t asize);
-void *del_freesign(void *bp);
-void *make_freesign(void *bp);
+void del_freesign(void *bp);
+void make_freesign(void *bp);
 
 ////////////////////////////함수시작/////////////////////////////////////
 
@@ -94,16 +94,14 @@ int mm_init(void)
     if ((heap_listp = mem_sbrk(6 * wsize)) == (void *)-1)
         return -1;
 
-    put(heap_listp, 0);                            // 블록 생성할때 word 1개 만큼 패딩,
-    put(heap_listp + (1 * wsize), pack(dsize, 1)); // 그 다음칸에 pro-헤더
-    put(heap_listp + (2 * wsize), NULL);           // 그 다음칸에 prev-ava
-    put(heap_listp + (3 * wsize), NULL);           // 그 다음칸에 next-ava
-    put(heap_listp + (4 * wsize), pack(dsize, 1)); // 그 다음칸에 pro-푸터
-    put(heap_listp + (5 * wsize), NULL);           // 그 다음칸에 epi-헤더
-    free_listp += (2 * wsize);                     // 포인터 pro-헤더와 prev-ava 사이로 이동
+    put(heap_listp, 0);                                // 블록 생성할때 word 1개 만큼 패딩,
+    put(heap_listp + (1 * wsize), pack(dsize * 2, 1)); // 그 다음칸에 pro-헤더(header, footer, next, prev)
+    put(heap_listp + (2 * wsize), NULL);               // 그 다음칸에 prev-ava
+    put(heap_listp + (3 * wsize), NULL);               // 그 다음칸에 next-ava
+    put(heap_listp + (4 * wsize), pack(dsize * 2, 1)); // 그 다음칸에 pro-푸터
+    put(heap_listp + (5 * wsize), NULL);               // 그 다음칸에 epi-헤더
 
-    if (extend_heap(wsize) == NULL) // 힙 가지고 놀기
-        return -1;
+    free_listp = heap_listp + (2 * wsize); // 포인터 pro-헤더와 prev-ava 사이로 이동
 
     if (extend_heap(chunksize / wsize) == NULL) // 힙 최초 설정
         return -1;
@@ -139,7 +137,7 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
     size_t next_alloc = get_alloc(header_of(next_block(bp)));
     size_t size = get_size(header_of(bp));
 
-    // 둘다 alloc이면 넘어감(어차피 return할때 해줌)
+    // 둘다 alloc이면 넘어감
     if (prev_alloc && next_alloc)
     {
     }
@@ -155,8 +153,8 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
     else if (!prev_alloc && next_alloc) // 이전 블록이 가용일때
     {
         del_freesign(prev_block(bp)); // 이전 블럭 freesign 지워줌
-        size += get_size(header_of(prev_block(bp)));
-        bp = prev_block(bp);               // bp를 원 prev의 헤더로 옮김
+        bp = prev_block(bp);          // bp를 원 prev의 헤더로 옮김
+        size += get_size(header_of(bp));
         put(header_of(bp), pack(size, 0)); // prev의 헤더에 put
         put(footer_of(bp), pack(size, 0)); // prev의 푸터에 put
     }
@@ -222,13 +220,15 @@ static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place�
     size_t curr_size = get_size(header_of(bp));
     del_freesign(bp);
 
-    if ((curr_size - asize) >= (2 * dsize))             // 현재 size-받은 size해서 헤더+푸터+prev,next의 size보다 크면
-    {                                                   // 다음블럭에 H F P N 만들어줌
-        put(header_of(bp), pack(asize, 1));             // asize만큼 떨어진 헤더 푸터
-        put(footer_of(bp), pack(asize, 1));             // 둘다 채우고
+    if ((curr_size - asize) >= (2 * dsize)) // 현재 size-받은 size해서 헤더+푸터+prev,next의 size보다 크면
+    {                                       // 다음블럭에 H F P N 만들어줌
+        put(header_of(bp), pack(asize, 1)); // asize만큼 떨어진 헤더 푸터
+        put(footer_of(bp), pack(asize, 1)); // 둘다 채우고
+
         bp = next_block(bp);                            // 다음블럭으로 가서
         put(header_of(bp), pack(curr_size - asize, 0)); // 남은 부분 헤더 푸터 만들어줌
         put(footer_of(bp), pack(curr_size - asize, 0));
+
         make_freesign(bp); // freesign만들어주고
     }
     else // 헤더 푸터 못들어가는 곳이면 그냥 curr 다 채움
@@ -278,7 +278,7 @@ void *mm_realloc(void *bp, size_t size)
 
 ////////////////////////////free_list/////////////////////////////////////
 // freelistp를 계속 갱신하면서 앞 뒤만 이어줌
-void *make_freesign(void *bp) // free상태인 블럭을 freelist의 처음에 삽입
+void make_freesign(void *bp) // free상태인 블럭을 freelist의 처음에 삽입
 {
     next_freep(bp) = free_listp; // bp의 다음은 free_listp
     prev_freep(bp) = NULL;       // bp의 이전은 x
@@ -287,7 +287,7 @@ void *make_freesign(void *bp) // free상태인 블럭을 freelist의 처음에 �
 }
 
 // 있는 freesign 다 지워줌
-void *del_freesign(void *bp)
+void del_freesign(void *bp)
 {
     if (bp == free_listp)
     {

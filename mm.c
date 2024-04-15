@@ -51,11 +51,10 @@ team_t team = {
 #define prev_block(bp) ((char *)(bp)-get_size((char *)(bp)-dsize))     // 이전블록으로 ㄲㄲ
 
 // 가용 리스트 내 이동
-// prev/next 블록이 가리키는 곳으로 가는 이중포인터 //void*의 값에 *접근함 
+// prev/next 블록이 가리키는 곳으로 가는 이중포인터 //void*의 값에 *접근함
 #define prev_freep(bp) (*(void **)(bp))         // prev free ㄱㄱ
 #define next_freep(bp) (*(void **)(bp + wsize)) ////next free ㄱㄱ
 
-static char *heap_listp; // 힙 시작 포인터 설정
 static char *free_listp; // free 시작 포인터 설정
 
 ////////////////////////////함수선언/////////////////////////////////////
@@ -75,6 +74,8 @@ void make_freesign(void *bp);
 // 힙 초기화
 int mm_init(void)
 {
+    static char *heap_listp; // 힙 시작 포인터 설정
+
     // mem_sbrk word 4개만큼 늘림, ==로 overflow아닌지 검사
     if ((heap_listp = mem_sbrk(6 * wsize)) == (void *)-1)
         return -1;
@@ -85,6 +86,7 @@ int mm_init(void)
     put(heap_listp + (3 * wsize), NULL);               // 그 다음칸에 next-ava
     put(heap_listp + (4 * wsize), pack(dsize * 2, 1)); // 그 다음칸에 pro-푸터
     put(heap_listp + (5 * wsize), NULL);               // 그 다음칸에 epi-헤더
+    // 5 6 7 8 9~로
 
     free_listp = heap_listp + (2 * wsize); // free포인터 pro-헤더와 prev-ava 사이로 이동
 
@@ -126,6 +128,7 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
     if (prev_alloc && next_alloc)
     {
     }
+
     // 앞뒤 중 가용상태인것과 합쳐줌
     else if (prev_alloc && !next_alloc) // 다음 블럭이 가용일때
     {
@@ -167,8 +170,8 @@ void *mm_malloc(size_t size)
     if (size == 0)
         return NULL;
 
-    if (size <= dsize)     // malloc받은 사이즈가 작아서 헤더푸터 안들어가면
-        asize = 3 * dsize; // asize에 헤더푸터 사이즈(16Byte) 넣음
+    if (size <= 2 * dsize) // malloc받은 사이즈가 작아서 헤더푸터,prev,next 안들어가면
+        asize = 3 * dsize; // asize에 헤더푸터,prev,next 사이즈(24Byte) 넣음
     else                   // 무조건 자기보다 큰 8의 배수 중 가장 작은값으로 바꿈
         asize = dsize * ((size + (dsize) + (dsize - 1)) / dsize);
 
@@ -264,25 +267,36 @@ void *mm_realloc(void *bp, size_t size)
 
 ////////////////////////////free_list/////////////////////////////////////
 // freelistp를 계속 갱신하면서 앞 뒤만 이어줌
-void make_freesign(void *bp) // free상태인 블럭을 freelist의 처음에 삽입
+void make_freesign(void *bp) // free상태인 블럭을 freelist의 주소순 삽입
 {
-    next_freep(bp) = free_listp; // bp의 다음은 free_listp
-    prev_freep(bp) = NULL;       // bp의 이전은 x
-    prev_freep(free_listp) = bp; // freelistP의 이전은 bp
-    free_listp = bp;             // free_listp를 현재bp로 수정
+
+    void *next_addr = free_listp;
+    void *prev_addr = NULL;
+
+    while (next_addr != NULL && next_addr < bp)
+    {
+        prev_addr = next_addr;
+        next_addr = next_freep(next_addr);
+    }
+    next_freep(bp) = next_addr;
+    prev_freep(bp) = prev_addr;
+
+    if (prev_addr == NULL)
+        free_listp = bp;
+    else
+        next_freep(prev_addr) = bp;
+
+    if (next_addr != NULL)
+        prev_freep(next_addr) = bp;
 }
 
-// 있는 freesign 다 지워줌
 void del_freesign(void *bp)
 {
-    if (bp == free_listp)
-    {
-        prev_freep(next_freep(bp)) = NULL;
+    if (prev_freep(bp) == NULL)
         free_listp = next_freep(bp);
-    }
-    else
-    {
-        next_freep(prev_freep(bp)) = next_freep(bp);
-        prev_freep(next_freep(bp)) = prev_freep(bp);
-    }
+
+    if (next_freep(bp) == NULL)
+        next_freep(prev_freep(bp)) = NULL;
+
+    
 }

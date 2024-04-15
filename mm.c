@@ -297,6 +297,4 @@ void del_freesign(void *bp)
 
     if (next_freep(bp) == NULL)
         next_freep(prev_freep(bp)) = NULL;
-
-    
 }

@@ -194,14 +194,11 @@ void *mm_malloc(size_t size)
 static void *find_fit(size_t asize)
 {
     void *bp;
-    void *best = NULL;
     for (bp = free_listp; get_alloc(header_of(bp)) != 1; bp = next_freep(bp))
-    {
         if (asize <= get_size(header_of(bp)))
-            if (best == NULL || get_size(header_of(best)) > get_size(header_of(bp)))
-                best = bp;
-    }
-    return best;
+            return bp;
+
+    return NULL;
 }
 
 static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place해줌
@@ -269,11 +266,10 @@ void *mm_realloc(void *bp, size_t size)
 // freelistp를 계속 갱신하면서 앞 뒤만 이어줌
 void make_freesign(void *bp) // free상태인 블럭을 freelist의 주소순 삽입
 {
-
     void *next_addr = free_listp;
     void *prev_addr = NULL;
 
-    while (next_addr != NULL && next_addr < bp)
+    while (next_addr != NULL && next_addr < bp && next_freep(next_addr) > bp)
     {
         prev_addr = next_addr;
         next_addr = next_freep(next_addr);
@@ -290,13 +286,17 @@ void make_freesign(void *bp) // free상태인 블럭을 freelist의 주소순 �
         prev_freep(next_addr) = bp;
 }
 
+// 있는 freesign 다 지워줌
 void del_freesign(void *bp)
 {
-    if (prev_freep(bp) == NULL)
+    if (bp == free_listp)
+    {
+        prev_freep(next_freep(bp)) = NULL;
         free_listp = next_freep(bp);
-
-    if (next_freep(bp) == NULL)
-        next_freep(prev_freep(bp)) = NULL;
-
-    
+    }
+    else
+    {
+        prev_freep(next_freep(bp)) = prev_freep(bp);
+        next_freep(prev_freep(bp)) = next_freep(bp);
+    }
 }

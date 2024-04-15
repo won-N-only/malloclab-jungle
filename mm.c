@@ -89,6 +89,7 @@ int mm_init(void)
     // 5 6 7 8 9~로
 
     free_listp = heap_listp + (2 * wsize); // free포인터 pro-헤더와 prev-ava 사이로 이동
+    heap_listp += (2 * wsize);             // free포인터 pro-헤더와 prev-ava 사이로 이동
 
     if (extend_heap(chunksize / wsize) == NULL) // 힙 최초 설정
         return -1;
@@ -269,25 +270,11 @@ void make_freesign(void *bp) // free상태인 블럭을 freelist의 주소순 �
     void *next_addr = free_listp;
     void *prev_addr = NULL;
 
-    // while (next_addr != NULL && next_addr < bp && next_freep(next_addr) > bp)
-    // {
-    //     prev_addr = next_addr;
-    //     next_addr = next_freep(next_addr);
-    // }
-while (next_addr != NULL) {
-    // 현재 위치의 중간값을 계산합니다.
-    void *mid_addr = (void *)(((int)next_addr + (int)bp) / 2);
-
-    // 중간값과 비교하여 탐색 범위를 줄입니다.
-    if (mid_addr >= bp) {
-        next_addr = mid_addr;
-    } else {
+    while (next_addr != NULL && next_addr < bp && next_freep(next_addr) > bp)
+    {
         prev_addr = next_addr;
         next_addr = next_freep(next_addr);
     }
-}
-
-
     next_freep(bp) = next_addr;
     prev_freep(bp) = prev_addr;
 

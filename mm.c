@@ -275,6 +275,23 @@ void make_freesign(void *bp) // free상태인 블럭을 freelist의 주소순 �
         prev_addr = next_addr;
         next_addr = next_freep(next_addr);
     }
+    // while (next_addr != NULL)
+    // {
+    //     // 현재 위치의 중간값을 계산합니다.
+    //     void *mid_addr = (void *)(((int)next_addr + (int)bp) / 2);
+
+    //     // 중간값과 비교하여 탐색 범위를 줄입니다.
+    //     if (mid_addr >= bp)
+    //     {
+    //         next_addr = mid_addr;
+    //     }
+    //     else
+    //     {
+    //         prev_addr = next_addr;
+    //         next_addr = next_freep(next_addr);
+    //     }
+    // }
+
     next_freep(bp) = next_addr;
     prev_freep(bp) = prev_addr;
 

@@ -57,11 +57,11 @@ team_t team = {
 // (seglist) 자신의 power에 맞는 가용블럭 찾음
 // 크기 2^4면 (heaplistp+wsize*2)만큼 가는식
 #define find_freep(power) (*(void **)((char *)(heap_listp) + (wsize * (power + 1))))
-// #define find_freep(power) (*(void **)((heap_listp) + (wsize * power))) // hp가 이미 char인데 왜 char로 또 형변환하는거임??
 
-#define power_size (10) // free list를 (2^4)부터 (2^12 ~ beyond)까지 9개 만들겠다
+#define power_size (10) // free list를 (2^4)부터 (2^13 ~ beyond)까지 10개 만들겠다
 
 static char *heap_listp; // 초기 힙 시작 포인터
+
 ////////////////////////////함수선언/////////////////////////////////////
 int mm_init(void);
 static void *extend_heap(size_t words);
@@ -286,9 +286,10 @@ void del_freesign(void *bp)
         prev_freep(next_freep(bp)) = prev_freep(bp);
 }
 
+//자기 자신이 2의 몇승인지 찾음
 int find_power(size_t size)
 {
-    if (size < 4 * wsize) //
+    if (size < 4 * wsize) //크기가 16이하면 아무것도 못들어가니까 return -1(extend 실행됨)
         return -1;
 
     size_t current_size = 4 * wsize; // 최소크기(16)부터 시작할거
@@ -330,7 +331,7 @@ void *mm_realloc(void *bp, size_t size)
     return new_bp;
 }
 
-////////////////////////////calloc/////////////////////////////////////
+// //////////////////////////calloc/////////////////////////////////////
 // void *calloc(size_t multiply, size_t size)
 // {
 //     size_t bytes;

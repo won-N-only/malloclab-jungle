@@ -45,6 +45,10 @@ power index가 작은(크기가 작은)블럭은 first-fit을 이용해 자리�
 power index가 큰(크기가 큰)블럭은 best-fit을 이용해 최대한 단편화가 일어나지 않게 함.
 
 작은 크기의 할당 요청에는 빠른 응답을 보장하고, 큰 크기의 할당 요청에는 메모리 사용의 효율성을 높임.
+
+3. realloc
+realloc시 앞 뒤 블럭의 가용상태 확인 후 collesc함.
+realloc시 발생하는 데이터 복사 오버헤드를 줄이고 메모리 단편화를 줄임.
 */
 
 ////////////////////////////변수선언/////////////////////////////////////
@@ -157,7 +161,8 @@ void *mm_malloc(size_t size)
 
     if (size <= 1 * dsize) // malloc받은 사이즈가 작아서 헤더푸터,prev,next 안들어가면
         asize = 2 * dsize; // asize에 헤더푸터,prev,next 사이즈(24Byte) 넣음
-    else                   // 무조건 (자기+헤더+푸터) size보다 큰 8의 배수 중 가장 작은값으로 바꿈
+
+    else // 무조건 (자기+헤더+푸터) size보다 큰 8의 배수 중 가장 작은값으로 바꿈
         asize = dsize * ((size + (dsize) + (dsize - 1)) / dsize);
 
     bp = find_fit(asize); // asize 정하고나서 bp에 반영함
@@ -176,7 +181,71 @@ void *mm_malloc(size_t size)
     return bp;
 }
 
-// free하고 헤더푸터에 free 표현 + coalesce함
+static void *find_fit(size_t asize) // first fit
+{
+    void *bp;
+    int power = find_power(asize); // find power로 asize의 power인덱스 확인
+    void *best = NULL;
+    if (power > 4) // asize가 256Byte 이상일때 best fit 시행
+    {
+        for (power; power <= power_size; power++) // bp를 찾을때까지 power index 순회
+        {
+            bp = find_master(power); // bp를 power index의 master블럭으로 지정
+            while (bp != NULL)       // best 갱신해가면서 끝까지 가고 return
+            {
+                if (asize <= get_size(header_of(bp)))
+                    if (best == NULL || sizeof(header_of(best)) > sizeof(header_of(bp)))
+                        best = bp;
+                bp = next_freep(bp);
+            }
+            // power index안에서  best 찾았으면 다음 power index 넘어가지 않고 return
+            if (best != NULL)
+                return best;
+        }
+        return best;
+    }
+    else // asize가 256Byte 이하일때 first fit 시행
+    {
+        // 각 power index 순회하다 크기가 맞는 블럭 나오면 return
+        for (power; power <= power_size; power++)
+        {
+            bp = find_master(power);
+            while (bp != NULL)
+            {
+                if (asize <= get_size(header_of(bp)))
+                    return bp;
+                bp = next_freep(bp);
+            }
+        }
+        return NULL;
+    }
+}
+
+static void place(void *bp, size_t asize) // 찾은 bp에 asize크기로 place
+{
+    size_t curr_size = get_size(header_of(bp));
+    del_freesign(bp);
+
+    if ((curr_size - asize) >= (2 * dsize)) // (블럭 크기) - (asize) 해서 (헤더+푸터 + dsize)보다 크면
+    {                                       // 다음블럭에 헤더, 푸터, freesign 넣음
+        put(header_of(bp), pack(asize, 1)); // asize만큼 떨어진 헤더 푸터
+        put(footer_of(bp), pack(asize, 1)); // 둘다 채우고
+
+        bp = next_block(bp);                            // 다음블럭으로 가서
+        put(header_of(bp), pack(curr_size - asize, 0)); // 남은 부분 헤더 푸터 만듦
+        put(footer_of(bp), pack(curr_size - asize, 0));
+
+        make_freesign(bp); // freesign 지정
+    }
+    else // 헤더 푸터 못들어가는 곳이면 다 채움
+    {
+        put(header_of(bp), pack(curr_size, 1));
+        put(footer_of(bp), pack(curr_size, 1));
+    }
+}
+
+////////////////////////////free/////////////////////////////////////
+// free하고 헤더푸터에 free 표현 + coalesce
 void mm_free(void *bp)
 {
     size_t size = get_size(header_of(bp));
@@ -282,65 +351,6 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
     return bp;
 }
 
-static void *find_fit(size_t asize) // first fit
-{
-    void *bp;
-    int power = find_power(asize); // find power로 asize의 power인덱스 확인
-    void *best = NULL;
-    if (power > 4) // asize가 256Byte 이상일때 best fit 시행
-    {
-        for (power; power <= power_size; power++) // bp를 찾을때까지 power index 순회
-        {
-            bp = find_master(power); // bp를 power index의 master블럭으로 지정
-            while (bp != NULL)
-            {
-                if (asize <= get_size(header_of(bp)))
-                    if (best == NULL || sizeof(header_of(best)) > sizeof(header_of(bp)))
-                        best = bp;
-                bp = next_freep(bp);
-            }
-        }
-        return best;
-    }
-    else // asize가 256Byte 이하일때 first fit 시행
-    {
-        for (power; power <= power_size; power++)
-        {
-            bp = find_master(power);
-            while (bp != NULL)
-            {
-                if (asize <= get_size(header_of(bp)))
-                    return bp;
-                bp = next_freep(bp);
-            }
-        }
-        return NULL;
-    }
-}
-
-static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place함
-{
-    size_t curr_size = get_size(header_of(bp));
-    del_freesign(bp);
-
-    if ((curr_size - asize) >= (2 * dsize)) // (블럭 크기) - (asize) 해서 (헤더+푸터 + dsize)보다 크면
-    {                                       // 다음블럭에 헤더, 푸터, 프리사인 넣음
-        put(header_of(bp), pack(asize, 1)); // asize만큼 떨어진 헤더 푸터
-        put(footer_of(bp), pack(asize, 1)); // 둘다 채우고
-
-        bp = next_block(bp);                            // 다음블럭으로 가서
-        put(header_of(bp), pack(curr_size - asize, 0)); // 남은 부분 헤더 푸터 만듦
-        put(footer_of(bp), pack(curr_size - asize, 0));
-
-        make_freesign(bp); // freesign 지정
-    }
-    else // 헤더 푸터 못들어가는 곳이면 다 채움
-    {
-        put(header_of(bp), pack(curr_size, 1));
-        put(footer_of(bp), pack(curr_size, 1));
-    }
-}
-
 ////////////////////////////re-alloc/////////////////////////////////////
 // 새 공간에 malloc한 후 데이터를 그쪽으로 옮긴다
 void *mm_realloc(void *bp, size_t size)
@@ -350,34 +360,56 @@ void *mm_realloc(void *bp, size_t size)
         mm_free(bp);
         return NULL;
     }
+
     if (bp == NULL) // heap 없을때 malloc
         return mm_malloc(size);
 
     size_t old_size = get_size(header_of(bp));
-    size_t new_size = size + (2 * dsize); // 요청한 크기에 header와 footer 추가
+    size_t new_size = size + (4 * wsize); // 요청한 크기에 header와 footer 추가
 
     // 현재 블록의 크기가 충분한 경우 바로 return
-    if (old_size > new_size)
+    if (new_size < old_size)
+    {
+        old_size = new_size;
         return bp;
+    }
 
-    // 인접 블럭과 coalesce
+    // 남는 블럭이 가용가능하면 free로 만들려 했는데 실패
+    // if ((old_size - new_size) >= (2 * dsize))
+    // {
+    //     put(header_of(bp), pack(new_size, 1));
+    //     put(footer_of(bp), pack(new_size, 1));
+    //     bp = next_block(bp);
+    //     make_freesign(bp);
+    //     put(header_of(bp), pack(old_size - new_size, 0));
+    //     put(footer_of(bp), pack(old_size - new_size, 0));
+    //     return prev_block(bp);
+    // }
+
+    // 다음 가용 블럭의 크기 + 현재 블럭의 크기 >= 요청받은 크기면 coallesce
     if (!get_alloc(header_of(next_block(bp))) && (old_size + get_size(header_of(next_block(bp)))) >= new_size)
     {
+        // 내 자리를 그대로 가져가므로 memcpy안하고 진행함(데이터 누락 없음)
         del_freesign(next_block(bp));
         old_size += get_size(header_of(next_block(bp)));
         put(header_of(bp), pack(old_size, 1));
         put(footer_of(bp), pack(old_size, 1));
+
         return bp;
     }
 
+    // 이전 블럭의 크기 + 현재 블럭의 크기 >= 요청받은 크기면 coallesce
     else if (!get_alloc(header_of(prev_block(bp))) && (old_size + get_size(header_of(prev_block(bp)))) >= new_size)
     {
-        del_freesign(prev_block(bp));
-        old_size += get_size(header_of(prev_block(bp)));
+        // 이전 블럭으로 옮겨가므로 데이터를 먼저 옮겨줘야함
+        memcpy(prev_block(bp), bp, old_size);
+
+        // 데이터 옮긴 후 coallesce 진행
         bp = prev_block(bp);
+        del_freesign(bp);
+        old_size += get_size(header_of(bp));
         put(header_of(bp), pack(old_size, 1));
         put(footer_of(bp), pack(old_size, 1));
-        make_freesign(bp); // bp에 freesign 만듦
 
         return bp;
     }

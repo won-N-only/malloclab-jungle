@@ -192,11 +192,19 @@ static void *find_fit(size_t asize)
 {
     void *bp;
     void *best = NULL;
-    for (bp = free_listp; get_alloc(header_of(bp)) != 1; bp = next_freep(bp))
+    for (bp = free_listp; bp != NULL; bp = next_freep(bp)) // freelistp(시작점)부터 NULL을 만날때까지 bp가 이동
     {
-        if (asize <= get_size(header_of(bp)))
+        // asize가 bp의 크기와 똑같으면
+        if (asize == get_size(header_of(bp)))
+            return bp;
+
+        // bp의 size가 asize이하면
+        if (asize < get_size(header_of(bp)))
+        {
+            // 가능한 size를 만난게 처음이거나 best의 size가 bp의 size보다 크면 (bp의 크기가 더 asize에 가까우면 )
             if (best == NULL || get_size(header_of(best)) > get_size(header_of(bp)))
-                best = bp;
+                best = bp; // best 갱신
+        }
     }
     return best;
 }

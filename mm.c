@@ -348,23 +348,46 @@ void *mm_realloc(void *bp, size_t size)
     if (size <= 0) // realloc 하려는 size 0이하면 free
     {
         mm_free(bp);
-        return 0;
+        return NULL;
     }
-    if (bp == NULL) // heap 없을때 malloc으로 함
+    if (bp == NULL) // heap 없을때 malloc
         return mm_malloc(size);
 
+    size_t old_size = get_size(header_of(bp));
+    size_t new_size = size + (2 * dsize); // 요청한 크기에 header와 footer 추가
+
+    // 현재 블록의 크기가 충분한 경우 바로 return
+    if (old_size > new_size)
+        return bp;
+
+    // 인접 블럭과 coalesce
+    if (!get_alloc(header_of(next_block(bp))) && (old_size + get_size(header_of(next_block(bp)))) >= new_size)
+    {
+        del_freesign(next_block(bp));
+        old_size += get_size(header_of(next_block(bp)));
+        put(header_of(bp), pack(old_size, 1));
+        put(footer_of(bp), pack(old_size, 1));
+        return bp;
+    }
+
+    else if (!get_alloc(header_of(prev_block(bp))) && (old_size + get_size(header_of(prev_block(bp)))) >= new_size)
+    {
+        del_freesign(prev_block(bp));
+        old_size += get_size(header_of(prev_block(bp)));
+        bp = prev_block(bp);
+        put(header_of(bp), pack(old_size, 1));
+        put(footer_of(bp), pack(old_size, 1));
+        make_freesign(bp); // bp에 freesign 만듦
+
+        return bp;
+    }
+
+    // 인접 블록과의 coalesce 불가능할 경우 새로운 공간 할당
     void *new_bp = mm_malloc(size);
 
-    if (new_bp == NULL) // 힙이 꽉 찼을때
-        return 0;
-
-    size_t oldsize = get_size(header_of(bp));
-
-    if (size < oldsize) // size줄어들면 그냥 줄임(데이터는 잘림)
-        oldsize = size;
-
-    memcpy(new_bp, bp, oldsize); // 데이터 다른곳에 복사함
-    mm_free(bp);                 // 있던 old는 free
+    // 기존 데이터 복사
+    memcpy(new_bp, bp, size);
+    mm_free(bp); // 기존 블록 해제
 
     return new_bp;
 }

@@ -1,11 +1,3 @@
-/* mm-naive.c - The fastest, least memory-efficient malloc package.
- * In this naive approach, a block is allocated by simply incrementing
- * the brk pointer.  A block is pure payload. There are no headers or
- * footers.  Blocks are never coalesced or reused. Realloc is
- * implemented directly using mm_malloc and mm_free. */
-/* NOTE TO STUDENTS: Replace this header comment with your own header
- * comment that gives a high level description of your solution.
- * okok let go */
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -23,14 +15,46 @@ team_t team = {
     "",
     ""};
 
-////////////////////////////변수시작/////////////////////////////////////
+//////////////////////////시스템 개요/////////////////////////////////////
+/*
+Segregated lists 방식에 First-fit과 Best-fit을 같이 사용함.
+
+1. Segregated lists
+총 12개의 free list master 블럭을 사용하였음.
+각 master 블럭은 해당 index 크기 범위 내의 블럭들을 연결리스트로 관리하며 그 범위는 다음과 같음.
+{
+ power index          최저크기        최대크기
+     1                  17               31
+     2                  32               63
+     3                  64              127
+     4                 128              255
+     5                 256              511
+     6                 512             1023
+     7                1024             2055
+     8                2056             4095
+     9                4096             8191
+     10               8192            16383
+     11              16384            32767
+     12              32768            ~~~~~
+}
+
+2. find-fit
+first와 best 두가지 방식을 둘 다 사용하였음.
+
+power index가 작은(크기가 작은)블럭은 first-fit을 이용해 자리를 바로 찾아가게 함.
+power index가 큰(크기가 큰)블럭은 best-fit을 이용해 최대한 단편화가 일어나지 않게 함.
+
+작은 크기의 할당 요청에는 빠른 응답을 보장하고, 큰 크기의 할당 요청에는 메모리 사용의 효율성을 높임.
+*/
+
+////////////////////////////변수선언/////////////////////////////////////
 
 // 전처리기 매크로 할당
 #define wsize 4                           // 워드는 4바이트
 #define dsize 8                           // 더블워드는 8바이트
 #define max(x, y) ((x) > (y) ? (x) : (y)) // x,y중 max값
-// 청크크기 줄이면 util이 올라가네?
-#define chunksize (1 << 9) // 청크 하나에 4KB할당(페이지 크기랑 일치해서 편할듯)
+
+#define chunksize (1 << 9) // 청크 하나에 512Byte할당
 
 // 크기와 가용여부를 합쳐서(비트연산 활용) 표시함
 #define pack(size, alloc) ((size) | (alloc)) // or연산으로 헤더에서 쓸 word만들어줌
@@ -51,14 +75,14 @@ team_t team = {
 
 // 가용 리스트 내 이동
 // prev/next 블록이 가리키는 곳으로 가는 이중포인터 //void*의 값에 *접근함
-#define prev_freep(bp) (*(void **)(bp))         // prev free ㄱㄱ
-#define next_freep(bp) (*(void **)(bp + wsize)) ////next free ㄱㄱ
+#define prev_freep(bp) (*(void **)(bp))         // prev free 블럭으로
+#define next_freep(bp) (*(void **)(bp + wsize)) ////next free 블럭으로
 
 // (seglist) 자신의 power에 맞는 가용블럭 찾음
 // 크기 2^4면 (heaplistp+wsize*2)만큼 가는식
-#define find_freep(power) (*(void **)((char *)(heap_listp) + (wsize * (power + 1))))
+#define find_master(power) (*(void **)((char *)(heap_listp) + (wsize * (power + 1))))
 
-#define power_size (10) // free list를 (2^4)부터 (2^13 ~ beyond)까지 10개 만들겠다
+#define power_size (12) // free list를 (2^4)부터 (2^15 ~ beyond)까지 12개 만들겠다
 
 static char *heap_listp; // 초기 힙 시작 포인터
 
@@ -66,33 +90,33 @@ static char *heap_listp; // 초기 힙 시작 포인터
 int mm_init(void);
 static void *extend_heap(size_t words);
 void *mm_malloc(size_t size);
-void *mm_realloc(void *bp, size_t size);
 void mm_free(void *bp);
-static void *coalesce(void *bp);
-static void place(void *bp, size_t asize);
-static void *find_fit(size_t asize);
-void del_freesign(void *bp);
 void make_freesign(void *bp);
+void del_freesign(void *bp);
 int find_power(size_t size);
+static void *coalesce(void *bp);
+static void *find_fit(size_t asize);
+static void place(void *bp, size_t asize);
+void *mm_realloc(void *bp, size_t size);
 
 ////////////////////////////함수시작/////////////////////////////////////
 
 int mm_init(void)
 {
-    if ((heap_listp = mem_sbrk(14 * wsize)) == (void *)-1)
+    if ((heap_listp = mem_sbrk(16 * wsize)) == (void *)-1)
         return -1;
 
     put(heap_listp, 0);                                 // 블록 생성 시 패딩
-    put(heap_listp + (1 * wsize), pack(12 * wsize, 1)); // 프롤로그 헤더
+    put(heap_listp + (1 * wsize), pack(14 * wsize, 1)); // 프롤로그 헤더
 
     char *current_ptr = heap_listp + (2 * wsize); // power의 초기 블록 포인터 설정
     for (int i = 0; i < power_size; i++)          // power_size만큼 블록생성
     {
         put(current_ptr, NULL); // 초기 블록 설정
-        current_ptr += wsize;   // 주소 증가
+        current_ptr += wsize;   // 주소 증가시켜 가며 다음 블럭 할당
     }
 
-    put(current_ptr, pack(12 * wsize, 1)); // 프롤로그 푸터
+    put(current_ptr, pack(14 * wsize, 1)); // 프롤로그 푸터
     put(current_ptr + wsize, NULL);        // 에필로그 헤더
 
     if (extend_heap(chunksize / wsize) == NULL) // 초기 힙 확장
@@ -101,7 +125,7 @@ int mm_init(void)
     return 0;
 }
 
-// heap 확장함(sbrk처럼), 인수 words인거 확인
+// heap 확장
 static void *extend_heap(size_t words)
 {
     char *bp;
@@ -119,6 +143,99 @@ static void *extend_heap(size_t words)
 
     // 만든 free space를 주변 블록과 합침
     return coalesce(bp);
+}
+
+////////////////////////////malloc/////////////////////////////////////
+void *mm_malloc(size_t size)
+{
+    size_t asize;       // 블록 사이즈 조정(adjust)
+    size_t extend_size; // fit없으면 extend로 넘기기 위한 var
+    char *bp;
+
+    if (size == 0)
+        return NULL;
+
+    if (size <= 1 * dsize) // malloc받은 사이즈가 작아서 헤더푸터,prev,next 안들어가면
+        asize = 2 * dsize; // asize에 헤더푸터,prev,next 사이즈(24Byte) 넣음
+    else                   // 무조건 (자기+헤더+푸터) size보다 큰 8의 배수 중 가장 작은값으로 바꿈
+        asize = dsize * ((size + (dsize) + (dsize - 1)) / dsize);
+
+    bp = find_fit(asize); // asize 정하고나서 bp에 반영함
+    if (bp != NULL)       // fit to asize 찾아서 place
+    {
+        place(bp, asize);
+        return bp;
+    }
+
+    // if통과 못하면 size extend하고 다시 place
+    extend_size = max(asize, chunksize); // asize와 chunksize중 큰것 찾아서 extend
+    if ((bp = extend_heap(extend_size / wsize)) == NULL)
+        return NULL;
+
+    place(bp, asize);
+    return bp;
+}
+
+// free하고 헤더푸터에 free 표현 + coalesce함
+void mm_free(void *bp)
+{
+    size_t size = get_size(header_of(bp));
+    put(header_of(bp), pack(size, 0));
+    put(footer_of(bp), pack(size, 0));
+    coalesce(bp);
+}
+
+////////////////////////////free_list/////////////////////////////////////
+// freelistp를 계속 갱신하면서 앞 뒤만 이음
+void make_freesign(void *bp) // free상태인 블럭을 freelist에 삽입
+{
+    int power = find_power(get_size(header_of(bp)));
+    //
+    next_freep(bp) = find_master(power);
+
+    // freelist가 NULL이면 freelist의 처음을 bp로 선언하고 return
+    if (find_master(power) != NULL)
+    {
+        prev_freep(find_master(power)) = bp;
+    }
+    // NULL이 아니면 freelist의 앞에 bp를 삽입
+    find_master(power) = bp;
+}
+
+// 있는 freesign 다 지움
+void del_freesign(void *bp)
+{
+    int powerp = find_power(get_size(header_of(bp)));
+
+    // bp가 list의 처음일 때
+    if (bp == find_master(powerp))
+    {
+        // bp의 다음블럭을 freep의 가장 처음으로 설정
+        find_master(powerp) = next_freep(find_master(powerp));
+        return;
+    }
+    // list의 처음 아니면 bp의 앞 뒤를 연결함
+    ///////////////next가 null이면어 차피 터지는거아님?
+    next_freep(prev_freep(bp)) = next_freep(bp);
+    if (next_freep(bp) != NULL)
+        prev_freep(next_freep(bp)) = prev_freep(bp);
+}
+
+// 자기 자신의 free 블럭 인덱스를 찾음
+int find_power(size_t size)
+{
+    if (size < 4 * wsize) // 크기가 16이하면 아무것도 못들어가니까 return -1(extend 실행됨)
+        return -1;
+
+    size_t current_size = 4 * wsize; // 최소크기(16)부터 시작할거
+    int i = 0;                       // 리턴할 값 초기화
+
+    while (current_size <= size && i < power_size) // 자신보다 큰 2의 제곱수를 만났을 때
+    {
+        current_size <<= 1;
+        i++; // 비트시프트 한 뒤 power올려줌
+    }
+    return i; // 최소 크기에서 i=1 최대크기에서 i=12
 }
 
 ////////////////////////////coalesce/////////////////////////////////////
@@ -165,56 +282,40 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
     return bp;
 }
 
-// 메모리 할당함
-void *mm_malloc(size_t size)
-{
-    size_t asize;       // 블록 사이즈 조정(adjust)
-    size_t extend_size; // fit없으면 extend로 넘기기 위한 var
-    char *bp;
-
-    if (size == 0)
-        return NULL;
-
-    if (size <= 1 * dsize) // malloc받은 사이즈가 작아서 헤더푸터,prev,next 안들어가면
-        asize = 2 * dsize; // asize에 헤더푸터,prev,next 사이즈(24Byte) 넣음
-    else                   // 무조건 자기보다 큰 8의 배수 중 가장 작은값으로 바꿈
-        asize = dsize * ((size + (dsize) + (dsize - 1)) / dsize);
-
-    bp = find_fit(asize); // asize 정하고나서 bp에 반영함
-    if (bp != NULL)       // fit to asize 찾아서 place
-    {
-        place(bp, asize);
-        return bp;
-    }
-
-    // if통과 못하면 size extend하고 다시 place
-    extend_size = max(asize, chunksize); // chunksize=4KB(initial val)
-    if ((bp = extend_heap(extend_size / wsize)) == NULL)
-        return NULL;
-
-    place(bp, asize);
-    return bp;
-}
-
 static void *find_fit(size_t asize) // first fit
 {
     void *bp;
-    int power = find_power(asize);
-    if (power == -1)
-        return NULL;
-
-    for (power; power <= power_size; power++)
+    int power = find_power(asize); // find power로 asize의 power인덱스 확인
+    void *best = NULL;
+    if (power > 4) // asize가 256Byte 이상일때 best fit 시행
     {
-        bp = find_freep(power);
-        while (bp != NULL)
+        for (power; power <= power_size; power++) // bp를 찾을때까지 power index 순회
         {
-            if (asize <= get_size(header_of(bp)))
-                return bp;
-            bp = next_freep(bp);
+            bp = find_master(power); // bp를 power index의 master블럭으로 지정
+            while (bp != NULL)
+            {
+                if (asize <= get_size(header_of(bp)))
+                    if (best == NULL || sizeof(header_of(best)) > sizeof(header_of(bp)))
+                        best = bp;
+                bp = next_freep(bp);
+            }
         }
+        return best;
     }
-
-    return NULL;
+    else // asize가 256Byte 이하일때 first fit 시행
+    {
+        for (power; power <= power_size; power++)
+        {
+            bp = find_master(power);
+            while (bp != NULL)
+            {
+                if (asize <= get_size(header_of(bp)))
+                    return bp;
+                bp = next_freep(bp);
+            }
+        }
+        return NULL;
+    }
 }
 
 static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place함
@@ -222,8 +323,8 @@ static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place�
     size_t curr_size = get_size(header_of(bp));
     del_freesign(bp);
 
-    if ((curr_size - asize) >= (2 * dsize)) // 현재 size-받은 size해서 헤더+푸터+prev,next의 size보다 크면
-    {                                       // 다음블럭에 H F P N 만듦
+    if ((curr_size - asize) >= (2 * dsize)) // (블럭 크기) - (asize) 해서 (헤더+푸터 + dsize)보다 크면
+    {                                       // 다음블럭에 헤더, 푸터, 프리사인 넣음
         put(header_of(bp), pack(asize, 1)); // asize만큼 떨어진 헤더 푸터
         put(footer_of(bp), pack(asize, 1)); // 둘다 채우고
 
@@ -231,76 +332,13 @@ static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place�
         put(header_of(bp), pack(curr_size - asize, 0)); // 남은 부분 헤더 푸터 만듦
         put(footer_of(bp), pack(curr_size - asize, 0));
 
-        make_freesign(bp); // freesign만들고
+        make_freesign(bp); // freesign 지정
     }
-    else // 헤더 푸터 못들어가는 곳이면 그냥 curr 다 채움
+    else // 헤더 푸터 못들어가는 곳이면 다 채움
     {
         put(header_of(bp), pack(curr_size, 1));
         put(footer_of(bp), pack(curr_size, 1));
     }
-}
-
-// free하고 헤더푸터에 f표현 + coalesce함
-// chunk size넘어가면? 어떻게해 8000인데 4000만 쓰고있으면?
-void mm_free(void *bp)
-{
-    size_t size = get_size(header_of(bp));
-    put(header_of(bp), pack(size, 0));
-    put(footer_of(bp), pack(size, 0));
-    coalesce(bp);
-}
-
-////////////////////////////free_list/////////////////////////////////////
-// freelistp를 계속 갱신하면서 앞 뒤만 이음
-void make_freesign(void *bp) // free상태인 블럭을 freelist에 삽입
-{
-    int power = find_power(get_size(header_of(bp)));
-    //
-    next_freep(bp) = find_freep(power);
-
-    // freelist가 NULL이면 freelist의 처음을 bp로 선언하고 return
-    if (find_freep(power) != NULL)
-    {
-        prev_freep(find_freep(power)) = bp;
-    }
-    // NULL이 아니면 freelist의 앞에 bp를 삽입
-    find_freep(power) = bp;
-}
-
-// 있는 freesign 다 지움
-void del_freesign(void *bp)
-{
-    int powerp = find_power(get_size(header_of(bp)));
-
-    // bp가 list의 처음일 때
-    if (bp == find_freep(powerp))
-    {
-        // bp의 다음블럭을 freep의 가장 처음으로 설정
-        find_freep(powerp) = next_freep(find_freep(powerp));
-        return;
-    }
-    // list의 처음 아니면 bp의 앞 뒤를 연결함
-    ///////////////next가 null이면어 차피 터지는거아님?
-    next_freep(prev_freep(bp)) = next_freep(bp);
-    if (next_freep(bp) != NULL)
-        prev_freep(next_freep(bp)) = prev_freep(bp);
-}
-
-//자기 자신이 2의 몇승인지 찾음
-int find_power(size_t size)
-{
-    if (size < 4 * wsize) //크기가 16이하면 아무것도 못들어가니까 return -1(extend 실행됨)
-        return -1;
-
-    size_t current_size = 4 * wsize; // 최소크기(16)부터 시작할거
-    int i = 0;                       // 리턴할 값 초기화
-
-    while (current_size <= size && i < power_size)
-    {
-        current_size <<= 1;
-        i++; // 비트시프트 한 뒤 power올려줌
-    }
-    return i;
 }
 
 ////////////////////////////re-alloc/////////////////////////////////////

@@ -129,6 +129,7 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
     size_t next_alloc = get_alloc(header_of(next_block(bp)));
     size_t size = get_size(header_of(bp));
 
+    // 앞 뒤 둘 다 사용중이면 넘어감
     if (prev_alloc && next_alloc)
     {
     }

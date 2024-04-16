@@ -43,7 +43,6 @@ team_t team = {
 #define get_size(p) (get(p) & ~0x7) // &와 ~를 이용해 뒷 3자리를 제외한 비트를 가져옴
 #define get_alloc(p) (get(p) & 0x1) // 0번째 비트(할당여부)를 가져옴
 
-//(char*)인 이유는 1바이트 단위로 조작이 가능해서임
 // 기본 이동
 #define header_of(bp) ((char *)(bp)-wsize)                             // header 포인터
 #define footer_of(bp) ((char *)(bp) + get_size(header_of(bp)) - dsize) // FooTer 포인터
@@ -113,7 +112,7 @@ static void *extend_heap(size_t words)
     put(footer_of(bp), pack(size, 0));
     put(header_of(next_block(bp)), pack(0, 1));
 
-    // 만든 free space를 주변 블록과 합쳐줌
+    // 만든 free space를 주변 블록과 합침
     return coalesce(bp);
 }
 
@@ -125,24 +124,24 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
     size_t next_alloc = get_alloc(header_of(next_block(bp)));
     size_t size = get_size(header_of(bp));
 
-    // 둘다 alloc이면 넘어감
     if (prev_alloc && next_alloc)
-    {
-    }
+        make_freesign(bp); // bp에 freesign 만듦
 
-    // 앞뒤 중 가용상태인것과 합쳐줌
+    // 앞뒤 중 가용상태인것과 합침
     else if (prev_alloc && !next_alloc) // 다음 블럭이 가용일때
     {
-        del_freesign(next_block(bp)); // 다음 블럭 freesign 지워줌
+        make_freesign(bp);            // 현재 bp에 freesign 만들어주고
+        del_freesign(next_block(bp)); // 다음 블럭 freesign 지움
         size += get_size(header_of(next_block(bp)));
-        put(header_of(bp), pack(size, 0));
-        put(footer_of(bp), pack(size, 0)); // 헤더 먼저 해줘서 다음블럭의 footer 가리킴
+        put(header_of(bp), pack(size, 0)); // 헤더에 증가한 사이즈 입력
+        put(footer_of(bp), pack(size, 0)); // 다음블럭의 footer 가리킴
     }
+
+    // 이전 블록이 가용이었으면 이전 블록의 freep 그대로 사용
 
     else if (!prev_alloc && next_alloc) // 이전 블록이 가용일때
     {
-        del_freesign(prev_block(bp)); // 이전 블럭 freesign 지워줌
-        bp = prev_block(bp);          // bp를 원 prev의 헤더로 옮김
+        bp = prev_block(bp); // bp를 원 prev의 헤더로 옮김
         size += get_size(header_of(bp));
         put(header_of(bp), pack(size, 0)); // prev의 헤더에 put
         put(footer_of(bp), pack(size, 0)); // prev의 푸터에 put
@@ -150,18 +149,16 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
 
     else // 둘 다 가용일때
     {
-        del_freesign(prev_block(bp)); // 두 블럭 다 freesign 지워줌
         del_freesign(next_block(bp));
         size += get_size(header_of(prev_block(bp))) + get_size(footer_of(next_block(bp)));
         bp = prev_block(bp);               // bp를 원 prev의 헤더로 옮김
         put(header_of(bp), pack(size, 0)); // prev의 헤더에 put
         put(footer_of(bp), pack(size, 0)); // prev의 푸터에 put
     }
-    make_freesign(bp); // bp에 freesign 만들어줌
     return bp;
 }
 
-// 메모리 할당해줌
+// 메모리 할당함
 void *mm_malloc(size_t size)
 {
     size_t asize;       // 블록 사이즈 조정(adjust)
@@ -183,7 +180,7 @@ void *mm_malloc(size_t size)
         return bp;
     }
 
-    // if통과 못하면 size extend해주고 다시 place
+    // if통과 못하면 size extend하고 다시 place
     extend_size = max(asize, chunksize); // chunksize=4KB(initial val)
     if ((bp = extend_heap(extend_size / wsize)) == NULL)
         return NULL;
@@ -192,7 +189,7 @@ void *mm_malloc(size_t size)
     return bp;
 }
 
-static void *find_fit(size_t asize)
+static void *find_fit(size_t asize) // first fit
 {
     void *bp;
     for (bp = free_listp; get_alloc(header_of(bp)) != 1; bp = next_freep(bp))
@@ -202,21 +199,21 @@ static void *find_fit(size_t asize)
     return NULL;
 }
 
-static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place해줌
+static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place함
 {
     size_t curr_size = get_size(header_of(bp));
     del_freesign(bp);
 
     if ((curr_size - asize) >= (3 * dsize)) // 현재 size-받은 size해서 헤더+푸터+prev,next의 size보다 크면
-    {                                       // 다음블럭에 H F P N 만들어줌
+    {                                       // 다음블럭에 H F P N 만듦
         put(header_of(bp), pack(asize, 1)); // asize만큼 떨어진 헤더 푸터
         put(footer_of(bp), pack(asize, 1)); // 둘다 채우고
 
         bp = next_block(bp);                            // 다음블럭으로 가서
-        put(header_of(bp), pack(curr_size - asize, 0)); // 남은 부분 헤더 푸터 만들어줌
+        put(header_of(bp), pack(curr_size - asize, 0)); // 남은 부분 헤더 푸터 만듦
         put(footer_of(bp), pack(curr_size - asize, 0));
 
-        make_freesign(bp); // freesign만들어주고
+        make_freesign(bp); // freesign만들고
     }
     else // 헤더 푸터 못들어가는 곳이면 그냥 curr 다 채움
     {
@@ -225,7 +222,7 @@ static void place(void *bp, size_t asize) // find한 bp, asize 넣어서 place�
     }
 }
 
-// free하고 헤더푸터에 f표현 + coalesce해줌
+// free하고 헤더푸터에 f표현 + coalesce함
 // chunk size넘어가면? 어떻게해 8000인데 4000만 쓰고있으면?
 void mm_free(void *bp)
 {
@@ -244,7 +241,7 @@ void *mm_realloc(void *bp, size_t size)
         mm_free(bp);
         return 0;
     }
-    if (bp == NULL) // heap 없을때 malloc으로 해줌
+    if (bp == NULL) // heap 없을때 malloc으로 함
         return mm_malloc(size);
 
     void *new_bp = mm_malloc(size);
@@ -264,54 +261,45 @@ void *mm_realloc(void *bp, size_t size)
 }
 
 ////////////////////////////free_list/////////////////////////////////////
-// freelistp를 계속 갱신하면서 앞 뒤만 이어줌
+// freelistp를 계속 갱신하면서 앞 뒤만 이음
 void make_freesign(void *bp) // free상태인 블럭을 freelist의 주소순 삽입
 {
+    // next add와 prev add 초기화
+    // next가 아니고 current가 좀 더 맞는표현이겠는데
     void *next_addr = free_listp;
     void *prev_addr = NULL;
 
-    while (next_addr != NULL && next_addr < bp && next_freep(next_addr) > bp)
+    // while (next_addr != NULL && next_addr < bp && next_freep(next_addr) > bp)
+    // bp가 freelist의 끝이거나 && bp가 next add를 넘어가거나 && next_freep(next_addr)가 bp보다 작아지면 while종료
+    // 아래 while문이 위 조건을 다 만족함
+    while (next_freep(next_addr) > bp)
     {
         prev_addr = next_addr;
         next_addr = next_freep(next_addr);
     }
-    // while (next_addr != NULL)
-    // {
-    //     // 현재 위치의 중간값을 계산합니다.
-    //     void *mid_addr = (void *)(((int)next_addr + (int)bp) / 2);
-
-    //     // 중간값과 비교하여 탐색 범위를 줄입니다.
-    //     if (mid_addr >= bp)
-    //     {
-    //         next_addr = mid_addr;
-    //     }
-    //     else
-    //     {
-    //         prev_addr = next_addr;
-    //         next_addr = next_freep(next_addr);
-    //     }
-    // }
-
+    // 위 조건문을 빠져나온 ㄹnextaddr,  next_freep(next_addr)가 각각 bp의 전/후 free-block-pointer에 들어감
     next_freep(bp) = next_addr;
     prev_freep(bp) = prev_addr;
 
-    if (prev_addr == NULL)
+    if (prev_addr == NULL) // prev-addr이 null이면 bp가 list의 시작
         free_listp = bp;
     else
         next_freep(prev_addr) = bp;
 
-    if (next_addr != NULL)
+    if (next_addr != NULL) // next-addr이 null이면 bp가 list의 끝이라 prev_freep(next_addr) 무시
         prev_freep(next_addr) = bp;
 }
 
-// 있는 freesign 다 지워줌
+// 있는 freesign 다 지움
 void del_freesign(void *bp)
 {
+    // bp가 list의 처음일 때
     if (bp == free_listp)
     {
         prev_freep(next_freep(bp)) = NULL;
         free_listp = next_freep(bp);
     }
+    // list의 처음 아니면 bp의 앞 뒤를 연결함
     else
     {
         prev_freep(next_freep(bp)) = prev_freep(bp);

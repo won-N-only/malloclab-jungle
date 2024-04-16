@@ -59,9 +59,9 @@ team_t team = {
 #define prev_block(bp) ((char *)(bp)-get_size((char *)(bp)-dsize))     // 이전블록으로 ㄲㄲ
 
 // 가용 리스트 내 이동
-// prev/next 블록이 가리키는 곳으로 가는 이중포인터 //void*의 값에 *접근함
-#define prev_freep(bp) (*(void **)(bp))         // prev free ㄱㄱ
-#define next_freep(bp) (*(void **)(bp + wsize)) ////next free ㄱㄱ
+// prev/next 블록이 가리키는 곳으로 가는 이중포인터 //4byte 형식의 주소값(char *)를 가르키는 포인터((char *)*)로 읽을것이고 *을 붙여서 그 값에 접근하겠다.
+#define prev_freep(bp) (*(char **)(bp))         // prev free ㄱㄱ
+#define next_freep(bp) (*(char **)(bp + wsize)) ////next free ㄱㄱ
 
 static char *heap_listp; // 힙 시작 포인터 설정
 static char *free_listp; // free 시작 포인터 설정

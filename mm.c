@@ -123,7 +123,7 @@ int mm_init(void)
     put(current_ptr, pack(14 * wsize, 1)); // 프롤로그 푸터
     put(current_ptr + wsize, NULL);        // 에필로그 헤더
 
-    if (extend_heap(chunksize / wsize) == NULL) // 초기 힙 확장
+    if (extend_heap(chunksize / wsize) == NULL) // 초기 힙 확장 
         return -1;
 
     return 0;
@@ -284,7 +284,7 @@ void del_freesign(void *bp)
         return;
     }
     // list의 처음 아니면 bp의 앞 뒤를 연결함
-    ///////////////next가 null이면어 차피 터지는거아님?
+    ///////////////next가 null이면 어차피 터지는거아님?
     next_freep(prev_freep(bp)) = next_freep(bp);
     if (next_freep(bp) != NULL)
         prev_freep(next_freep(bp)) = prev_freep(bp);

@@ -90,9 +90,7 @@ realloc시 발생하는 데이터 복사 오버헤드를 줄이고 메모리 단
 #define power_size (12) // free list를 (2^4)부터 (2^15 ~ beyond)까지 12개 만들겠다
 
 static char *heap_listp; // 초기 힙 시작 포인터
-#define ALIGNMENT 8
 
-#define ALIGN(size) (((size) + (ALIGNMENT - 1)) & ~0x7)
 ////////////////////////////함수선언/////////////////////////////////////
 int mm_init(void);
 static void *extend_heap(size_t words);
@@ -163,11 +161,11 @@ void *mm_malloc(size_t size)
     if (size == 0)
         return NULL;
 
-    if (size <= 1 * dsize) // malloc받은 사이즈가 작아서 헤더푸터,prev,next 안들어가면
-        asize = 2 * dsize; // asize에 헤더푸터,prev,next 사이즈(24Byte) 넣음
+    else if (size <= 1 * dsize) // malloc받은 사이즈가 작아서 헤더푸터,prev,next 안들어가면
+        asize = 2 * dsize;      // asize에 헤더,푸터,데이터 사이즈(16Byte) 넣음
 
     else // 무조건 (자기+헤더+푸터) size보다 큰 8의 배수 중 가장 작은값으로 바꿈
-        asize = dsize * ((size + (dsize) + (dsize - 1)) / dsize);
+        asize = (((size + dsize) + (dsize - 1)) & ~0x7);
 
     bp = find_fit(asize); // asize 정하고나서 bp에 반영함
     if (bp != NULL)       // fit to asize 찾아서 place
@@ -190,7 +188,7 @@ static void *find_fit(size_t asize) // first fit
     void *bp;
     int power = find_power(asize); // find power로 asize의 power인덱스 확인
     void *best = NULL;
-    if (power > 6) // asize가 1024Byte 이상일때 best fit 시행
+    if (power >= 6) // asize가 512Byte 이상일때 best fit 시행
     {
         // power선언 되어있으니 재선언 안함
         for (; power <= power_size; power++) // bp를 찾을때까지 power index 순회
@@ -204,7 +202,7 @@ static void *find_fit(size_t asize) // first fit
                 bp = next_freep(bp);
             }
             // 어떤 power index안에서  best 찾았으면 다음 power index 넘어가지 않고 return
-            if (best != NULL)
+            if (best)
                 return best;
         }
         return best;
@@ -222,7 +220,7 @@ static void *find_fit(size_t asize) // first fit
                 bp = next_freep(bp);
             }
         }
-        return NULL;
+        return bp;
     }
 }
 
@@ -264,7 +262,7 @@ void mm_free(void *bp)
 void make_freesign(void *bp) // free상태인 블럭을 freelist에 삽입
 {
     int power = find_power(get_size(header_of(bp)));
-    //
+
     next_freep(bp) = find_master(power);
 
     // freelist가 NULL이면 freelist의 처음을 bp로 선언하고 return
@@ -298,9 +296,6 @@ void del_freesign(void *bp)
 // 자기 자신의 free 블럭 인덱스를 찾음
 int find_power(size_t size)
 {
-    if (size < 4 * wsize) // 크기가 16이하면 아무것도 못들어가니까 return -1(extend 실행됨)
-        return -1;
-
     size_t current_size = 4 * wsize; // 최소크기(16)부터 시작할거
     int i = 0;                       // 리턴할 값 초기화
 
@@ -374,7 +369,11 @@ void *mm_realloc(void *bp, size_t size)
 
     // // 현재 블록의 크기가 충분한 경우 바로 return
     if (new_size < old_size)
-        return bp;    
+    {
+        // mm_free(bp);
+        // place(bp, new_size);
+        return bp;
+    }
 
     // 다음 가용 블럭의 크기 + 현재 블럭의 크기 >= 요청받은 크기면 coallesce
     if (!get_alloc(header_of(next_block(bp))) && (old_size + get_size(header_of(next_block(bp)))) >= new_size)
@@ -391,7 +390,7 @@ void *mm_realloc(void *bp, size_t size)
     // 이전 블럭의 크기 + 현재 블럭의 크기 >= 요청받은 크기면 coallesce
     else if (!get_alloc(header_of(prev_block(bp))) && (old_size + get_size(header_of(prev_block(bp)))) >= new_size)
     {
-        // 이전 블럭으로 옮겨가므로 데이터를 먼저 옮겨줘야함
+        // 이전 블럭으로 옮겨가므로 데이터를 먼저 옮겨줌
         memcpy(prev_block(bp), bp, old_size);
 
         // 데이터 옮긴 후 coallesce 진행
@@ -415,12 +414,13 @@ void *mm_realloc(void *bp, size_t size)
 }
 
 //////////////////////////calloc/////////////////////////////////////
-void *mm_calloc(size_t multiply, size_t size)
+void *mm_calloc(size_t multiply, size_t x)
 {
     size_t bytes;
     void *ptr;
-    // sizeof(x) * multiply만큼 공간 확보 후
-    bytes = multiply * size;
+
+    // sizeof(x) * multiply만큼 공간 확보 후 0으로 채워서 malloc
+    bytes = multiply * x;
     ptr = mm_malloc(bytes);
     memset(ptr, 0, bytes);
 

@@ -17,13 +17,13 @@ team_t team = {
 
 //////////////////////////시스템 개요/////////////////////////////////////
 /*
-Segregated lists 방식에 First-fit과 Best-fit을 같이 사용함.
+Segregated lists 방식에 First-fit과 Best-fit을 혼용하여 사용.
 
 1. Segregated lists
-총 12개의 free list master 블럭을 사용하였음.
+총 12개의 freelist-master 블럭을 사용.
 각 master 블럭은 해당 index 크기 범위 내의 블럭들을 연결리스트로 관리하며 그 범위는 다음과 같음.
 {
- power index          최저크기        최대크기
+    index             최저크기        최대크기
      1                  16               31
      2                  32               63
      3                  64              127
@@ -41,13 +41,13 @@ Segregated lists 방식에 First-fit과 Best-fit을 같이 사용함.
 2. find-fit
 first와 best 두가지 방식을 둘 다 사용하였음.
 
-power index가 작은(크기가 작은)블럭은 first-fit을 이용해 자리를 바로 찾음.
-power index가 큰(크기가 큰)블럭은 best-fit을 이용해 최대한 단편화가 일어나지 않게 함.
+index가 작은(크기가 작은)블럭은 first-fit을 이용해 자리를 바로 찾음.
+index가 큰(크기가 큰)블럭은 best-fit을 이용해 최대한 단편화가 일어나지 않게 함.
 
-작은 크기의 할당 요청에는 빠른 응답을 보장하고, 큰 크기의 할당 요청에는 메모리 사용의 효율성을 높임.
+작은 크기의 할당 요청에 신속한 응답을, 큰 크기의 할당 요청에는 높은 메모리 사용 효율을 보장함.
 
 3. realloc
-realloc시 앞 뒤 블럭의 가용상태 확인 후 collesc함.
+realloc시 앞 뒤 블럭의 가용상태를 확인한 후 collesce함.
 realloc시 발생하는 데이터 복사 오버헤드를 줄이고 메모리 단편화를 줄임.
 */
 
@@ -106,7 +106,6 @@ void *mm_realloc(void *bp, size_t size);
 void *mm_calloc(size_t multiply, size_t size);
 
 ////////////////////////////함수시작/////////////////////////////////////
-
 int mm_init(void)
 {
     if ((heap_listp = mem_sbrk(16 * wsize)) == (void *)-1)
@@ -293,7 +292,7 @@ void del_freesign(void *bp)
         prev_freep(next_freep(bp)) = prev_freep(bp);
 }
 
-// 자기 자신의 free 블럭 인덱스를 찾음
+// 자기 자신의 free 블럭 인덱스를 찾음(2의 i승)
 int find_power(size_t size)
 {
     size_t current_size = 4 * wsize; // 최소크기(16)부터 시작할거
@@ -352,7 +351,7 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
 }
 
 ////////////////////////////re-alloc/////////////////////////////////////
-// 새 공간에 malloc한 후 데이터를 그쪽으로 옮긴다
+// 새 공간에 malloc한 후 데이터를 그쪽으로 옮김
 void *mm_realloc(void *bp, size_t size)
 {
     if (size <= 0) // realloc 하려는 size 0이하면 free
@@ -369,16 +368,12 @@ void *mm_realloc(void *bp, size_t size)
 
     // // 현재 블록의 크기가 충분한 경우 바로 return
     if (new_size < old_size)
-    {
-        // mm_free(bp);
-        // place(bp, new_size);
         return bp;
-    }
 
     // 다음 가용 블럭의 크기 + 현재 블럭의 크기 >= 요청받은 크기면 coallesce
     if (!get_alloc(header_of(next_block(bp))) && (old_size + get_size(header_of(next_block(bp)))) >= new_size)
     {
-        // 내 자리를 그대로 가져가므로 memcpy안하고 진행함(데이터 누락 없음)
+        // 내 자리를 그대로 가져가므로 memcpy안하고 진행함
         del_freesign(next_block(bp));
         old_size += get_size(header_of(next_block(bp)));
         put(header_of(bp), pack(old_size, 1));

@@ -38,6 +38,8 @@ Segregated lists 방식에 First-fit과 Best-fit을 혼용하여 사용.
      12              32768            ~~~~~
 }
 
+연결리스트는 ascending in size임.
+
 2. find-fit
 first와 best 두가지 방식을 둘 다 사용하였음.
 
@@ -96,8 +98,8 @@ int mm_init(void);
 static void *extend_heap(size_t words);
 void *mm_malloc(size_t size);
 void mm_free(void *bp);
-void make_freesign(void *bp);
-void del_freesign(void *bp);
+void put_freelist(void *bp);
+void del_freelist(void *bp);
 int find_power(size_t size);
 static void *coalesce(void *bp);
 static void *find_fit(size_t asize);
@@ -198,9 +200,10 @@ static void *find_fit(size_t asize) // first fit
                 if (asize <= get_size(header_of(bp)))
                     if (best == NULL || sizeof(header_of(best)) > sizeof(header_of(bp)))
                         best = bp;
+
                 bp = next_freep(bp);
             }
-            // 어떤 power index안에서  best 찾았으면 다음 power index 넘어가지 않고 return
+            // 어떤 power index안에서 best 찾았으면 다음 power index 넘어가지 않고 return
             if (best)
                 return best;
         }
@@ -226,7 +229,7 @@ static void *find_fit(size_t asize) // first fit
 static void place(void *bp, size_t asize) // 찾은 bp에 asize크기로 place
 {
     size_t curr_size = get_size(header_of(bp));
-    del_freesign(bp);
+    del_freelist(bp);
 
     if ((curr_size - asize) >= (2 * dsize)) // (블럭 크기) - (asize) 해서 (헤더+푸터 + dsize)보다 크면
     {                                       // 다음블럭에 헤더, 푸터, freesign 넣음
@@ -237,7 +240,7 @@ static void place(void *bp, size_t asize) // 찾은 bp에 asize크기로 place
         put(header_of(bp), pack(curr_size - asize, 0)); // 남은 부분 헤더 푸터 만듦
         put(footer_of(bp), pack(curr_size - asize, 0));
 
-        make_freesign(bp); // freesign 지정
+        put_freelist(bp); // freesign 지정
     }
     else // 헤더 푸터 못들어가는 곳이면 다 채움
     {
@@ -257,24 +260,38 @@ void mm_free(void *bp)
 }
 
 ////////////////////////////free_list/////////////////////////////////////
-// freelistp를 계속 갱신하면서 앞 뒤만 이음
-void make_freesign(void *bp) // free상태인 블럭을 freelist에 삽입
+// freelist에 크기 오름차순으로 블럭을 추가
+void put_freelist(void *bp)
 {
-    int power = find_power(get_size(header_of(bp)));
+    size_t size = get_size(header_of(bp)); // 블록의 크기 가져오기
+    int power = find_power(size);          // 블록의 크기에 해당하는 power 계산
 
-    next_freep(bp) = find_master(power);
-
-    // freelist가 NULL이면 freelist의 처음을 bp로 선언하고 return
-    if (find_master(power) != NULL)
+    // freelist에서 크기 순서를 유지할 수 있는 블럭 삽입위치 찾음
+    void *prev = NULL;                  // prev는 null
+    void *current = find_master(power); // current는 해당 power의 master블럭으로 설정
+    while (current != NULL && get_size(header_of(current)) < size)
     {
-        prev_freep(find_master(power)) = bp;
+        prev = current;
+        current = next_freep(current);
     }
-    // NULL이 아니면 freelist의 앞에 bp를 삽입
-    find_master(power) = bp;
+
+    // 이전 블록과 다음 블록의 포인터 업데이트
+    next_freep(bp) = current;
+    prev_freep(bp) = prev;
+
+    // 이전 블록이 있으면 이전 블록의 다음 블록을 현재 블록으로 설정
+    if (prev != NULL)
+        next_freep(prev) = bp;
+    else // 이전 블록이 없으면 / 현재 블록을 / 해당 power index의 가장 첫 번째 블록으로 설정
+        find_master(power) = bp;
+
+    // 다음 블록이 있으면 / 다음 블록의 이전 블록을 / 현재 블록으로 설정
+    if (current != NULL)
+        prev_freep(current) = bp;
 }
 
-// 있는 freesign 다 지움
-void del_freesign(void *bp)
+// freelist에서 블럭 제거함
+void del_freelist(void *bp)
 {
     int powerp = find_power(get_size(header_of(bp)));
 
@@ -322,7 +339,7 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
     // 앞뒤 중 가용상태인것과 합침
     else if (prev_alloc && !next_alloc) // 다음 블럭이 가용일때
     {
-        del_freesign(next_block(bp)); // 다음 블럭 freesign 지움
+        del_freelist(next_block(bp)); // 다음 블럭 freesign 지움
         size += get_size(header_of(next_block(bp)));
         put(header_of(bp), pack(size, 0)); // 헤더에 증가한 사이즈 입력
         put(footer_of(bp), pack(size, 0)); // 다음블럭의 footer 가리킴
@@ -330,7 +347,7 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
 
     else if (!prev_alloc && next_alloc) // 이전 블록이 가용일때
     {
-        del_freesign(prev_block(bp));
+        del_freelist(prev_block(bp));
         bp = prev_block(bp); // bp를 원 prev의 헤더로 옮김
         size += get_size(header_of(bp));
         put(header_of(bp), pack(size, 0)); // prev의 헤더에 put
@@ -339,14 +356,14 @@ static void *coalesce(void *bp) // 앞 뒤 가용블럭과 free한 블럭 합칩
 
     else // 둘 다 가용일때
     {
-        del_freesign(prev_block(bp));
-        del_freesign(next_block(bp));
+        del_freelist(prev_block(bp));
+        del_freelist(next_block(bp));
         size += get_size(header_of(prev_block(bp))) + get_size(footer_of(next_block(bp)));
         bp = prev_block(bp);               // bp를 원 prev의 헤더로 옮김
         put(header_of(bp), pack(size, 0)); // prev의 헤더에 put
         put(footer_of(bp), pack(size, 0)); // prev의 푸터에 put
     }
-    make_freesign(bp); // bp에 freesign 만듦
+    put_freelist(bp); // bp에 freesign 만듦
     return bp;
 }
 
@@ -374,7 +391,7 @@ void *mm_realloc(void *bp, size_t size)
     if (!get_alloc(header_of(next_block(bp))) && (old_size + get_size(header_of(next_block(bp)))) >= new_size)
     {
         // 내 자리를 그대로 가져가므로 memcpy안하고 진행함
-        del_freesign(next_block(bp));
+        del_freelist(next_block(bp));
         old_size += get_size(header_of(next_block(bp)));
         put(header_of(bp), pack(old_size, 1));
         put(footer_of(bp), pack(old_size, 1));
@@ -390,7 +407,7 @@ void *mm_realloc(void *bp, size_t size)
 
         // 데이터 옮긴 후 coallesce 진행
         bp = prev_block(bp);
-        del_freesign(bp);
+        del_freelist(bp);
         old_size += get_size(header_of(bp));
         put(header_of(bp), pack(old_size, 1));
         put(footer_of(bp), pack(old_size, 1));
@@ -400,7 +417,6 @@ void *mm_realloc(void *bp, size_t size)
 
     // 인접 블록과의 coalesce 불가능할 경우 새로운 공간 할당
     void *new_bp = mm_malloc(size);
-
     // 기존 데이터 복사
     memcpy(new_bp, bp, size);
     mm_free(bp); // 기존 블록 해제
@@ -420,4 +436,4 @@ void *mm_calloc(size_t multiply, size_t x)
     memset(ptr, 0, bytes);
 
     return ptr;
-} // 짜긴했는데 되는진몰겠네
+} // 작동여부 불명.
